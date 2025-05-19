@@ -223,7 +223,7 @@ Invivo.vs.Invitro.GPC4.sig <- rbind(Invivo.vs.Invitro.GPC4.sig, tempNA)
 
 
 
-write.table(Invivo.vs.Invitro.GPC4.sig, paste0("output/DE/Invivo.vs.Invitro.GPC4.sig.txt"), sep = "\t", row.names = F, quote = F)
+#write.table(Invivo.vs.Invitro.GPC4.sig, paste0("output/DE/Invivo.vs.Invitro.GPC4.sig.txt"), sep = "\t", row.names = F, quote = F)
 
 ```
 
@@ -246,12 +246,12 @@ sigRegulons <- sigRegulons[,c(1,3,4,9,6)]
 names(sigRegulons)
 names(sigRegulons) <- c("Gene", "Gene_FDR", "Gene_Log2FC", "AUC_FDR", "AUC_Log2FC")
 
-write.csv(sigRegulons, "output/DE/sigRegulons.csv")
+#write.csv(sigRegulons, "output/DE/sigRegulons.csv")
 
 transitionSCENIC.sig.out <- transitionSCENIC.sig[order(transitionSCENIC.sig$avg_log2FC, decreasing = T),]
 transitionSCENIC.sig.out <- transitionSCENIC.sig.out[,c(6,5,2)]
 
-write.csv(transitionSCENIC.sig.out, "output/DE/Invivo.vs.Invitro.SCENICE.sig.csv", row.names = F, quote = F)
+#write.csv(transitionSCENIC.sig.out, "output/DE/Invivo.vs.Invitro.SCENICE.sig.csv", row.names = F, quote = F)
 
 ```
 
@@ -378,12 +378,12 @@ transitionIPAgg <- ggplot(transitionCatsGO, aes(fill = zScore, y = pVal, x = Pat
 
 transitionIPAgg
 
-ggsave("output/Figures/Invitro_Invivo/ipa.pdf", width = 30, height = 8)
+#ggsave("output/Figures/Invitro_Invivo/ipa.pdf", width = 30, height = 8)
 
 IPA <- IPA[,c(1:5)]
 IPA <- IPA[order(IPA$zScore, decreasing = T),]
 
-write.table(IPA, "output/IPA/Invivo.vs.Invitro.GPC4.IPA.sig.txt", quote = F, row.names = F, sep = "\t")
+#write.table(IPA, "output/IPA/Invivo.vs.Invitro.GPC4.IPA.sig.txt", quote = F, row.names = F, sep = "\t")
 
 
 ```
@@ -505,7 +505,7 @@ transitionIPAgg <- transitionIPAgg + labs(tag = "D")
 
 top <- (stageDimFig | volcanoGene | scatterRegulon) + plot_layout(widths = c(1,2,1.25))
 
-ggsave(top, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 24, height = 12)
+#ggsave(top, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 24, height = 12)
 
 
 bottom <- (transitionIPAgg | plot_spacer()) + plot_layout(widths = c(1,3))
@@ -513,7 +513,7 @@ bottom <- (transitionIPAgg | plot_spacer()) + plot_layout(widths = c(1,3))
 topBottom <- (top / bottom) + plot_layout(heights = c(1,1.5))
 
 
-ggsave(topBottom, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 30, height = 30)
+#ggsave(topBottom, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 30, height = 30)
 
 
 
@@ -581,8 +581,8 @@ invivoTF.supp <- invivoTF.supp[order(invivoTF.supp$TF, invivoTF.supp$Target),]
 invitroTF.supp <- invitroTF.supp[,c(1:8)]
 invivoTF.supp <- invivoTF.supp[,c(1:8)]
 
-write.table(invitroTF.supp, "output/Networks/Invitro_Invivo/invitroTF.supp.txt", quote = F , row.names = F, sep = "\t")
-write.table(invivoTF.supp, "output/Networks/Invitro_Invivo/invivoTF.supp.txt", quote = F , row.names = F, sep = "\t")
+#write.table(invitroTF.supp, "output/Networks/Invitro_Invivo/invitroTF.supp.txt", quote = F , row.names = F, sep = "\t")
+#write.table(invivoTF.supp, "output/Networks/Invitro_Invivo/invivoTF.supp.txt", quote = F , row.names = F, sep = "\t")
 
 
 
@@ -691,7 +691,7 @@ invivo.invitro.primed$color <- ifelse(invivo.invitro.primed$logFC.x > 0, "red", 
 
 (ggplot(invivo.invitro.consensus, aes(x = logFC, y = logFC.x, fill = color)) + 
   geom_point(shape = 21, colour = "black") + 
-  theme_manuscript() + 
+  theme_manuscript + 
   geom_hline(yintercept = 0) +
   geom_vline(xintercept = 0) +
   scale_fill_manual(values = c("red" = "red", "#2E30FF" = "#2E30FF")) + 
@@ -701,7 +701,7 @@ invivo.invitro.primed$color <- ifelse(invivo.invitro.primed$logFC.x > 0, "red", 
   labs(tag = "A"))  /
 (ggplot(invivo.invitro.primed, aes(x = logFC.x, y = logFC.y, fill = color)) + 
   geom_point(shape = 21, colour = "black") + 
-  theme_manuscript() + 
+  theme_manuscript + 
   geom_hline(yintercept = 0) +
   geom_vline(xintercept = 0) +
   scale_fill_manual(values = c("red" = "red", "#2E30FF" = "#2E30FF")) + 
@@ -710,7 +710,7 @@ invivo.invitro.primed$color <- ifelse(invivo.invitro.primed$logFC.x > 0, "red", 
    labs(tag = "B") +
   theme(legend.position = "none"))
 
-ggsave("output/Figures/scATAC/InvivoOverlap.pdf", width = 8.5, height = 11, units ="in")
+#ggsave("output/Figures/scATAC/InvivoOverlap.pdf", width = 8.5, height = 11, units ="in")
 
 sigRegulonsScatter[sigRegulonsScatter$Gene %in% invivo.invitro.primed$gene,]
 

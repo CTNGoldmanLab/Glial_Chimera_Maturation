@@ -38,6 +38,7 @@ titleFont = 24
 tagSize = 34
 
 source("Scripts/HelperFunctions.R")
+source("Scripts/StyleSettings.R")
 
 theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 
         axis.title = element_text(size = axisTitleSize), 
@@ -79,14 +80,18 @@ invitroInvivoAuc <- t(as.matrix(invitroInvivoAuc))
 invitroInvivoAuc <- CreateAssayObject(data = invitroInvivoAuc)
 
 invitroInvivo[["SCENIC"]] <- invitroInvivoAuc
+```
 
+    ## Warning: Layer counts isn't present in the assay object; returning NULL
+
+``` r
 rm(invitroInvivoAuc)
 gc()
 ```
 
     ##             used   (Mb) gc trigger   (Mb) limit (Mb)  max used   (Mb)
-    ## Ncells   9182030  490.4   28019969 1496.5         NA  17564743  938.1
-    ## Vcells 503062905 3838.1  831498910 6343.9      98304 606082074 4624.1
+    ## Ncells   9336278  498.7   30478308 1627.8         NA  17785509  949.9
+    ## Vcells 503408642 3840.8  832084066 6348.3      98304 617394461 4710.4
 
 ## Remake Transition with SCENIC data
 
@@ -155,7 +160,7 @@ transition <- subset(transition, subset = invivoCellType %in% c("GPC", "cGPC", "
 DimPlot(transition)
 ```
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
 ## Determine Gene Expresion Fractions and keep those that are present in 10% of either GPC population
 
@@ -251,7 +256,7 @@ Invivo.vs.Invitro.GPC4.sig <- rbind(Invivo.vs.Invitro.GPC4.sig, tempNA)
 
 
 
-write.table(Invivo.vs.Invitro.GPC4.sig, paste0("output/DE/Invivo.vs.Invitro.GPC4.sig.txt"), sep = "\t", row.names = F, quote = F)
+#write.table(Invivo.vs.Invitro.GPC4.sig, paste0("output/DE/Invivo.vs.Invitro.GPC4.sig.txt"), sep = "\t", row.names = F, quote = F)
 ```
 
 ## SCENIC DE
@@ -283,12 +288,12 @@ names(sigRegulons)
 ``` r
 names(sigRegulons) <- c("Gene", "Gene_FDR", "Gene_Log2FC", "AUC_FDR", "AUC_Log2FC")
 
-write.csv(sigRegulons, "output/DE/sigRegulons.csv")
+#write.csv(sigRegulons, "output/DE/sigRegulons.csv")
 
 transitionSCENIC.sig.out <- transitionSCENIC.sig[order(transitionSCENIC.sig$avg_log2FC, decreasing = T),]
 transitionSCENIC.sig.out <- transitionSCENIC.sig.out[,c(6,5,2)]
 
-write.csv(transitionSCENIC.sig.out, "output/DE/Invivo.vs.Invitro.SCENICE.sig.csv", row.names = F, quote = F)
+#write.csv(transitionSCENIC.sig.out, "output/DE/Invivo.vs.Invitro.SCENICE.sig.csv", row.names = F, quote = F)
 ```
 
 ## SCENIC targets
@@ -443,15 +448,15 @@ transitionIPAgg <- ggplot(transitionCatsGO, aes(fill = zScore, y = pVal, x = Pat
 transitionIPAgg
 ```
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
 
 ``` r
-ggsave("output/Figures/Invitro_Invivo/ipa.pdf", width = 30, height = 8)
+#ggsave("output/Figures/Invitro_Invivo/ipa.pdf", width = 30, height = 8)
 
 IPA <- IPA[,c(1:5)]
 IPA <- IPA[order(IPA$zScore, decreasing = T),]
 
-write.table(IPA, "output/IPA/Invivo.vs.Invitro.GPC4.IPA.sig.txt", quote = F, row.names = F, sep = "\t")
+#write.table(IPA, "output/IPA/Invivo.vs.Invitro.GPC4.IPA.sig.txt", quote = F, row.names = F, sep = "\t")
 ```
 
 ## Gene Expression Volcano
@@ -495,7 +500,7 @@ volcanoGene <- EnhancedVolcano(volcanoDE,
 volcanoGene
 ```
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 ## SCENIC regulon scatter
 
@@ -525,10 +530,10 @@ scatterRegulon <- ggplot(sigRegulonsScatter, aes(x = Gene_Log2FC, y = AUC_Log2FC
 scatterRegulon
 ```
 
-    ## Warning: ggrepel: 13 unlabeled data points (too many overlaps). Consider
+    ## Warning: ggrepel: 12 unlabeled data points (too many overlaps). Consider
     ## increasing max.overlaps
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
 ``` r
 cor(sigRegulonsScatter$Gene_Log2FC, sigRegulonsScatter$AUC_Log2FC)
@@ -550,7 +555,7 @@ integratedDimFig <- DimPlotCustom(invitroInvivo, group.by = "cellType", pt.size 
 integratedDimFig
 ```
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
 
 ## Split by stage dim
 
@@ -562,7 +567,7 @@ stageDimFig <- DimPlotCustom(transition, split.by = "stage", group.by = "stage",
 stageDimFig
 ```
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
 
 ``` r
 table(transition$stage)
@@ -578,14 +583,14 @@ stageDimFig[[2]] <- stageDimFig[[2]] + xlab("UMAP 1") + labs(title = "In Vivo GP
 stageDimFig
 ```
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-15-2.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-15-2.png)<!-- -->
 
 ``` r
 stageDimFig <- stageDimFig & scale_fill_manual(values = manuscriptPalette)
 stageDimFig
 ```
 
-![](17_Invitro_Invivo_Analysis_files/figure-gfm/unnamed-chunk-15-3.png)<!-- -->
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-15-3.png)<!-- -->
 
 ``` r
 #integratedDimFig <- integratedDimFig + labs(tag = "A")
@@ -596,7 +601,7 @@ transitionIPAgg <- transitionIPAgg + labs(tag = "D")
 
 top <- (stageDimFig | volcanoGene | scatterRegulon) + plot_layout(widths = c(1,2,1.25))
 
-ggsave(top, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 24, height = 12)
+#ggsave(top, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 24, height = 12)
 
 
 bottom <- (transitionIPAgg | plot_spacer()) + plot_layout(widths = c(1,3))
@@ -604,7 +609,7 @@ bottom <- (transitionIPAgg | plot_spacer()) + plot_layout(widths = c(1,3))
 topBottom <- (top / bottom) + plot_layout(heights = c(1,1.5))
 
 
-ggsave(topBottom, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 30, height = 30)
+#ggsave(topBottom, filename  ="output/Figures/Invitro_Invivo/invitroInvivo.pdf", width = 30, height = 30)
 ```
 
 ## Networks
@@ -668,8 +673,8 @@ invivoTF.supp <- invivoTF.supp[order(invivoTF.supp$TF, invivoTF.supp$Target),]
 invitroTF.supp <- invitroTF.supp[,c(1:8)]
 invivoTF.supp <- invivoTF.supp[,c(1:8)]
 
-write.table(invitroTF.supp, "output/Networks/Invitro_Invivo/invitroTF.supp.txt", quote = F , row.names = F, sep = "\t")
-write.table(invivoTF.supp, "output/Networks/Invitro_Invivo/invivoTF.supp.txt", quote = F , row.names = F, sep = "\t")
+#write.table(invitroTF.supp, "output/Networks/Invitro_Invivo/invitroTF.supp.txt", quote = F , row.names = F, sep = "\t")
+#write.table(invivoTF.supp, "output/Networks/Invitro_Invivo/invivoTF.supp.txt", quote = F , row.names = F, sep = "\t")
 
 
 
@@ -749,9 +754,105 @@ invitroInvivoEdges <- rbindlist(list(In.Vivo.network[[1]], In.Vitro.network[[1]]
 invitroInvivoNodes <- rbindlist(list(In.Vivo.network[[2]], In.Vitro.network[[2]]))
 
 
-write.table(invitroInvivoEdges, "output/Networks/Invitro_Invivo/invitroInvivoEdges.txt", quote = F , row.names = F, sep = "\t")
-write.table(invitroInvivoNodes, "output/Networks/Invitro_Invivo/invitroInvivoNodes.txt", quote = F , row.names = F, sep = "\t")
+#write.table(invitroInvivoEdges, "output/Networks/Invitro_Invivo/invitroInvivoEdges.txt", quote = F , row.names = F, sep = "\t")
+#write.table(invitroInvivoNodes, "output/Networks/Invitro_Invivo/invitroInvivoNodes.txt", quote = F , row.names = F, sep = "\t")
 ```
+
+## Make scATAC overlap Supplemental
+
+## Load and filter data
+
+``` r
+## Read in and filter to GPC4 enriched gene activities
+atac.sig <- read.delim("output/DE/scATAC_gene_activity_de.txt")
+atac.sig <- atac.sig[atac.sig$group == "GPC4",]
+
+## Read in GPC4 gene enrichment
+invitro.GPC4.enrichment <- read.delim("output/DE/GPC4.vs.Rest.sig.txt")
+
+## Merge to yield consensus in vitro GPC4 genes
+invitro.GPC.consensus <- merge(atac.sig, invitro.GPC4.enrichment, by.x = 1, by.y = "gene")
+invitro.GPC.consensus <- invitro.GPC.consensus[invitro.GPC.consensus$logFC.x* invitro.GPC.consensus$logFC.y > 0,]
+
+## Filter for genes that were not significant but whose gene activities were in vitro
+invitro.GPC4.atacOnly <- atac.sig[atac.sig$feature %not in% invitro.GPC4.enrichment$gene,]
+```
+
+## Find overlap genes for in vivo vs in vitro GPC4
+
+``` r
+invivo.invitro.consensus <- merge(Invivo.vs.Invitro.GPC4.sig, invitro.GPC.consensus, by.x = "gene", by.y = 1)
+table(invivo.invitro.consensus$logFC * invivo.invitro.consensus$logFC.x > 0)
+```
+
+    ## 
+    ## FALSE  TRUE 
+    ##    17   116
+
+``` r
+invivo.invitro.consensus$color <- ifelse(invivo.invitro.consensus$logFC > 0, "red", "#2E30FF")
+
+invivo.invitro.primed <- merge(Invivo.vs.Invitro.GPC4.sig, invitro.GPC4.atacOnly, by.x = "gene", by.y = 1)
+invivo.invitro.primed$color <- ifelse(invivo.invitro.primed$logFC.x > 0, "red", "#2E30FF")
+```
+
+``` r
+(ggplot(invivo.invitro.consensus, aes(x = logFC, y = logFC.x, fill = color)) + 
+  geom_point(shape = 21, colour = "black") + 
+  theme_manuscript + 
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  scale_fill_manual(values = c("red" = "red", "#2E30FF" = "#2E30FF")) + 
+  geom_text_repel(aes(label = gene), max.overlaps = 25) + 
+  labs(x = "GPC4 Enrichment Gene Expression Log2FC", y= "GPC4 Enrichment Gene Activity Log2FC") + 
+  theme(legend.position = "none") + 
+  labs(tag = "A"))  /
+(ggplot(invivo.invitro.primed, aes(x = logFC.x, y = logFC.y, fill = color)) + 
+  geom_point(shape = 21, colour = "black") + 
+  theme_manuscript + 
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  scale_fill_manual(values = c("red" = "red", "#2E30FF" = "#2E30FF")) + 
+  geom_text_repel(aes(label = gene), max.overlaps = 25) + 
+  labs(x = "GPC4 Enrichment Gene Expression Log2FC", y= "GPC4 Enrichment Gene Activity Log2FC") + 
+   labs(tag = "B") +
+  theme(legend.position = "none"))
+```
+
+    ## Warning: ggrepel: 78 unlabeled data points (too many overlaps). Consider
+    ## increasing max.overlaps
+
+    ## Warning: ggrepel: 232 unlabeled data points (too many overlaps). Consider
+    ## increasing max.overlaps
+
+![](17_Invitro_Invivo_Analysis_withATAC_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+
+``` r
+#ggsave("output/Figures/scATAC/InvivoOverlap.pdf", width = 8.5, height = 11, units ="in")
+
+sigRegulonsScatter[sigRegulonsScatter$Gene %in% invivo.invitro.primed$gene,]
+```
+
+    ##     Gene     Gene_FDR Gene_Log2FC       AUC_FDR   AUC_Log2FC   color
+    ## 3   ATF4 3.780858e-05   0.3847923  9.551858e-38  0.031437361    red2
+    ## 12  EGR2 1.504435e-07   0.3165878  0.000000e+00  0.272660715    red2
+    ## 15  FOSB 2.955135e-08   0.7091832  0.000000e+00  0.211548863    red2
+    ## 29  PBX1 3.836731e-06  -0.4747069  7.063754e-06 -0.008254076 #2E30FF
+    ## 30 PRRX1 4.483357e-09   0.4571844 7.112844e-291  0.113419857    red2
+    ## 42 TEAD2 8.934306e-09  -2.6906521  6.016986e-10 -0.010437903 #2E30FF
+
+``` r
+sigRegulonsScatter[sigRegulonsScatter$Gene %in% invivo.invitro.consensus$gene,]
+```
+
+    ##     Gene     Gene_FDR Gene_Log2FC       AUC_FDR  AUC_Log2FC   color
+    ## 8   DLX1 9.511443e-04  -0.4141617 2.146662e-148 -0.05901632 #2E30FF
+    ## 9   DLX2 1.572389e-03  -0.5144474 2.806264e-300 -0.21571078 #2E30FF
+    ## 10  DLX5 3.108525e-09  -2.6906521  0.000000e+00 -0.19248907 #2E30FF
+    ## 16 FOXG1 3.821273e-03  -0.4726944 1.290627e-245 -0.08706589 #2E30FF
+    ## 28 OLIG2 5.927470e-05   0.6453371 2.194532e-280  0.25333170    red2
+    ## 33 SOX10 1.553081e-04   0.6429352 1.160765e-304  0.13884371    red2
+    ## 38  SOX8 4.181229e-05   0.5621610 3.713533e-237  0.14974534    red2
 
 ``` r
 sessionInfo()
@@ -789,45 +890,45 @@ sessionInfo()
     ## [27] biomaRt_2.54.1              cowplot_1.1.1              
     ## [29] RColorBrewer_1.1-3          ggplot2_3.4.4              
     ## [31] devtools_2.4.5              usethis_2.1.6              
-    ## [33] SeuratObject_4.1.3          Seurat_4.3.0               
+    ## [33] SeuratObject_5.0.2          Seurat_4.3.0               
     ## [35] dplyr_1.1.1                
     ## 
     ## loaded via a namespace (and not attached):
     ##   [1] utf8_1.2.3             spatstat.explore_3.2-7 reticulate_1.34.0     
     ##   [4] tidyselect_1.2.0       RSQLite_2.3.1          AnnotationDbi_1.60.2  
     ##   [7] htmlwidgets_1.6.2      BiocParallel_1.32.6    grid_4.2.3            
-    ##  [10] Rtsne_0.16             munsell_0.5.0          ragg_1.2.5            
-    ##  [13] codetools_0.2-19       ica_1.0-3              future_1.32.0         
-    ##  [16] miniUI_0.1.1.1         withr_2.5.0            spatstat.random_3.2-3 
-    ##  [19] colorspace_2.1-0       progressr_0.13.0       filelock_1.0.2        
-    ##  [22] highr_0.10             knitr_1.42             rstudioapi_0.14       
-    ##  [25] ROCR_1.0-11            tensor_1.5             listenv_0.9.0         
-    ##  [28] labeling_0.4.2         GenomeInfoDbData_1.2.9 polyclip_1.10-4       
-    ##  [31] bit64_4.0.5            farver_2.1.1           rprojroot_2.0.3       
-    ##  [34] parallelly_1.35.0      vctrs_0.6.1            generics_0.1.3        
-    ##  [37] xfun_0.38              BiocFileCache_2.6.1    R6_2.5.1              
-    ##  [40] locfit_1.5-9.7         hdf5r_1.3.8            bitops_1.0-7          
+    ##  [10] Rtsne_0.16             munsell_0.5.0          codetools_0.2-19      
+    ##  [13] ica_1.0-3              future_1.32.0          miniUI_0.1.1.1        
+    ##  [16] withr_2.5.0            spatstat.random_3.2-3  colorspace_2.1-0      
+    ##  [19] progressr_0.13.0       filelock_1.0.2         highr_0.10            
+    ##  [22] knitr_1.42             rstudioapi_0.14        ROCR_1.0-11           
+    ##  [25] tensor_1.5             listenv_0.9.0          labeling_0.4.2        
+    ##  [28] GenomeInfoDbData_1.2.9 polyclip_1.10-4        bit64_4.0.5           
+    ##  [31] farver_2.1.1           rprojroot_2.0.3        parallelly_1.35.0     
+    ##  [34] vctrs_0.6.1            generics_0.1.3         xfun_0.38             
+    ##  [37] BiocFileCache_2.6.1    R6_2.5.1               locfit_1.5-9.7        
+    ##  [40] hdf5r_1.3.8            DelayedArray_0.24.0    bitops_1.0-7          
     ##  [43] spatstat.utils_3.1-0   cachem_1.0.7           gridGraphics_0.5-1    
-    ##  [46] DelayedArray_0.24.0    promises_1.2.0.1       gtable_0.3.3          
-    ##  [49] globals_0.16.2         processx_3.8.0         goftest_1.2-3         
-    ##  [52] rlang_1.1.0            systemfonts_1.0.4      splines_4.2.3         
-    ##  [55] lazyeval_0.2.2         spatstat.geom_3.2-9    yaml_2.3.7            
-    ##  [58] reshape2_1.4.4         abind_1.4-5            httpuv_1.6.9          
-    ##  [61] tools_4.2.3            ellipsis_0.3.2         sessioninfo_1.2.2     
-    ##  [64] ggridges_0.5.4         Rcpp_1.0.10            plyr_1.8.8            
-    ##  [67] progress_1.2.2         zlibbioc_1.44.0        purrr_1.0.1           
-    ##  [70] RCurl_1.98-1.12        ps_1.7.4               prettyunits_1.1.1     
-    ##  [73] deldir_1.0-6           viridis_0.6.2          pbapply_1.7-0         
-    ##  [76] urlchecker_1.0.1       zoo_1.8-11             cluster_2.1.4         
-    ##  [79] fs_1.6.1               magrittr_2.0.3         scattermore_0.8       
-    ##  [82] lmtest_0.9-40          RANN_2.6.1             fitdistrplus_1.1-8    
-    ##  [85] pkgload_1.3.2          hms_1.1.3              mime_0.12             
-    ##  [88] evaluate_0.20          xtable_1.8-4           XML_3.99-0.14         
-    ##  [91] gridExtra_2.3          compiler_4.2.3         tibble_3.2.1          
-    ##  [94] KernSmooth_2.23-20     crayon_1.5.2           htmltools_0.5.5       
-    ##  [97] mgcv_1.8-42            later_1.3.0            DBI_1.1.3             
-    ## [100] dbplyr_2.3.2           MASS_7.3-58.3          rappdirs_0.3.3        
-    ## [103] Matrix_1.5-4           cli_3.6.1              igraph_2.0.3          
+    ##  [46] promises_1.2.0.1       gtable_0.3.3           globals_0.16.2        
+    ##  [49] processx_3.8.0         goftest_1.2-3          spam_2.10-0           
+    ##  [52] rlang_1.1.0            splines_4.2.3          lazyeval_0.2.2        
+    ##  [55] spatstat.geom_3.2-9    yaml_2.3.7             reshape2_1.4.4        
+    ##  [58] abind_1.4-5            httpuv_1.6.9           tools_4.2.3           
+    ##  [61] ellipsis_0.3.2         sessioninfo_1.2.2      ggridges_0.5.4        
+    ##  [64] Rcpp_1.0.10            plyr_1.8.8             progress_1.2.2        
+    ##  [67] zlibbioc_1.44.0        purrr_1.0.1            RCurl_1.98-1.12       
+    ##  [70] ps_1.7.4               prettyunits_1.1.1      deldir_1.0-6          
+    ##  [73] viridis_0.6.2          pbapply_1.7-0          urlchecker_1.0.1      
+    ##  [76] zoo_1.8-11             cluster_2.1.4          fs_1.6.1              
+    ##  [79] magrittr_2.0.3         scattermore_0.8        lmtest_0.9-40         
+    ##  [82] RANN_2.6.1             fitdistrplus_1.1-8     pkgload_1.3.2         
+    ##  [85] hms_1.1.3              mime_0.12              evaluate_0.20         
+    ##  [88] xtable_1.8-4           XML_3.99-0.14          gridExtra_2.3         
+    ##  [91] compiler_4.2.3         tibble_3.2.1           KernSmooth_2.23-20    
+    ##  [94] crayon_1.5.2           htmltools_0.5.5        mgcv_1.8-42           
+    ##  [97] later_1.3.0            DBI_1.1.3              dbplyr_2.3.2          
+    ## [100] MASS_7.3-58.3          rappdirs_0.3.3         Matrix_1.6-4          
+    ## [103] cli_3.6.1              dotCall64_1.1-1        igraph_2.0.3          
     ## [106] pkgconfig_2.0.3        sp_1.6-0               plotly_4.10.1         
     ## [109] spatstat.sparse_3.0-3  xml2_1.3.3             XVector_0.38.0        
     ## [112] yulab.utils_0.0.6      stringr_1.5.0          callr_3.7.3           
@@ -841,5 +942,4 @@ sessionInfo()
     ## [136] pkgbuild_1.4.0         survival_3.5-5         glue_1.6.2            
     ## [139] remotes_2.4.2          png_0.1-8              bit_4.0.5             
     ## [142] stringi_1.7.12         profvis_0.3.7          blob_1.2.4            
-    ## [145] textshaping_0.3.6      memoise_2.0.1          irlba_2.3.5.1         
-    ## [148] future.apply_1.10.0
+    ## [145] memoise_2.0.1          irlba_2.3.5.1          future.apply_1.10.0
