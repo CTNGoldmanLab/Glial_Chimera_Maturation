@@ -1,0 +1,1093 @@
+---
+title: "Initial Analysis of Human Cells out of Shiverer Chimeras"
+author: "John Mariani"
+date: "12/6/2022"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+library(Seurat)
+library(scPlottingTools)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(MAST)
+library(plyr)
+library(xlsx)
+library(patchwork)
+library(ggplot2)
+library(scales)
+library(ggVennDiagram)
+library(data.table)
+library(slingshot)
+library(tradeSeq)
+library(tidyr)
+library(dplyr)
+library(plyr)
+library(magrittr)
+library(viridis)
+library(tidyr)
+library(EnhancedVolcano)
+library(ggalluvial)
+
+
+
+axisTitleSize <- 20
+axisTextSize <- 18
+labelFont = 18
+titleFont = 24
+tagSize = 34
+
+source("Scripts/HelperFunctions.R")
+
+theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 
+        axis.title = element_text(size = axisTitleSize), 
+        title = element_text(size = titleFont), 
+        legend.title = element_text(size = axisTitleSize),
+        legend.text = element_text(size = axisTitleSize),
+        plot.tag = element_text(size = tagSize),
+        plot.title = element_text(size = titleFont))
+
+manuscriptPalette <- c("In Vivo" = "red2", 
+                       "In Vitro - GPC Stage" = "#2E30FF",
+                       "NPC" = "magenta",
+                       "GPC1" = "forestgreen",
+                       "GPC2" = "darkorange",
+                       "GPC3" = "firebrick2",
+                       "GPC4" = "turquoise",
+                       "Astrocyte" = "dodgerblue2",
+                       "imOL" = "gold",
+                       "maOL" = "darkorchid4",
+                       "GPC" = "turquoise",
+                       "imAstrocyte" = "firebrick2",
+                       "cGPC" = "darkorange",
+                       "cAPC" = "forestgreen")
+
+
+
+
+```
+
+
+```{r}
+
+DimPlotPseudotimeKnots <- function(seurat, group.by = "orig.ident", pt.size = 1, curve = sds, models = gamFit){
+  p <- DimPlotCustom(seurat, group.by = group.by, pt.size = pt.size)
+  for (i in seq_along(slingCurves(curve))) {
+    curve_i <- slingCurves(curve)[[i]]
+    curve_i <- curve_i$s[curve_i$ord, seq_len(2)]
+    #colnames(curve_i) <- c("dim1", "dim2")
+    p <- p + geom_path(data = as.data.frame(curve_i), col = "black", size = 1)
+    #If I feel like adding an arrow again
+    #p <- p + geom_path(data = as.data.frame(curve_i), col = "black", size = 1, arrow = arrow())
+  }
+  # Adding the knots
+  nCurves <- length(slingCurves(curve))
+  knots <- S4Vectors::metadata(models)$tradeSeq$knots
+  knots_dim <- matrix(ncol = 2, nrow = nCurves * length(knots))
+  for (ii in seq_along(slingCurves(curve))) {
+    S <- project_to_curve(x = slingCurves(curve)[[ii]]$s,
+                          s = slingCurves(curve)[[ii]]$s[slingCurves(curve)[[ii]]$ord, ],
+                          stretch = 0)
+    for (jj in seq_along(knots)) {
+      kn <- knots[jj]
+      times <- S$lambda
+      knot <- which.min(abs(times - kn))
+      knots_dim[jj + (ii-1)*length(knots), ] <- S$s[knot, seq_len(2)]
+    }
+  }
+  knots_dim <- as.data.frame(knots_dim)
+  colnames(knots_dim) <- c("UMAP_1", "UMAP_2")
+  p <- p +
+    geom_point(data = knots_dim, col = "black", size = 2)
+  return(p)
+}
+
+
+```
+
+
+# Load In Vivo Data
+
+```{r}
+
+invivo <- readRDS("output/RDS/invivo.rds")
+invivo <- NormalizeData(invivo)
+
+```
+
+## Determine Gene Expresion Fractions
+```{r}
+
+expressionFractions <- DotPlot(invivo, assay = "RNA", features = row.names(invivo))$data
+names(expressionFractions)
+
+expressionFractionsFilt <- expressionFractions[expressionFractions$pct.exp > 10,]
+highFraction <- unique(expressionFractionsFilt$features.plot)
+
+expressionFractionsDF <- pivot_wider(data = expressionFractions, values_from = pct.exp, names_from = id, id_cols = "features.plot")
+
+```
+
+
+## Setup MAST ZLM for DE
+
+```{r}
+
+# invivo.sca <- makeSCA(invivo, highFraction)
+# 
+
+# modelMAST <- as.formula(object = "~cellType+line+chemistry+ngeneson+(1|orig.ident)")
+# 
+# ZLM.invivo <-MAST::zlm(formula = modelMAST, sca = invivo.sca, method='glmer',ebayes = F,
+#                                             strictConvergence = FALSE, parallel = T)
+# 
+# colnames(ZLM.invivo@coefC)
+# 
+# 
+# 
+# saveRDS(ZLM.invivo, "RDS/ZLM.invivo")
+# ZLM.invivo <- readRDS("RDS/ZLM.invivo")
+
+```
+
+
+```{r}
+
+
+# runLR(ZLM.invivo, c(0,1,0,0,0,0,0,0,0,0), 
+#       contrast0 = c(1,1,0,0,0,0,0,.5,.5,0), 
+#       contrast1 = c(1,0,0,0,0,0,0,.5,.5,0), 
+#       fileName = "Astrocyte.vs.imAstrocyte")
+# 
+# 
+# 
+# temp <- colnames(ZLM.invivo@coefC)
+# names(temp) <- temp
+# temp[] <- c(0,1,0,0,-1,0,0,0,0,0)
+# 
+# runLR(ZLM.invivo, c(0,1,0,0,-1,0,0,0,0,0), 
+#       contrast0 = c(1,0,0,0,1,0,0,.5,.5,0), 
+#       contrast1 = c(1,1,0,0,0,0,0,.5,.5,0), 
+#       fileName = "imAstrocyte.vs.GPC")
+# 
+# 
+# temp[] <- c(0,1,-1,0,0,0,0,0,0,0)
+# temp
+# 
+# runLR(ZLM.invivo, c(0,1,-1,0,0,0,0,0,0,0), 
+#       contrast0 = c(1,0,1,0,0,0,0,.5,.5,0), 
+#       contrast1 = c(1,1,0,0,0,0,0,.5,.5,0), 
+#       fileName = "imAstrocyte.vs.cAPC")
+# 
+# temp[] <- c(0,0,0,1,-1,0,0,0,0,0)
+# temp
+# 
+# runLR(ZLM.invivo, c(0,0,0,1,-1,0,0,0,0,0), 
+#       contrast0 = c(1,0,0,0,1,0,0,.5,.5,0), 
+#       contrast1 = c(1,0,0,1,0,0,0,.5,.5,0), 
+#       fileName = "cGPC.vs.GPC")
+# 
+# temp[] <- c(0,0,-1,1,0,0,0,0,0,0)
+# temp
+# 
+# runLR(ZLM.invivo, c(0,0,-1,1,0,0,0,0,0,0), 
+#       contrast0 = c(1,0,1,0,0,0,0,.5,.5,0), 
+#       contrast1 = c(1,0,0,1,0,0,0,.5,.5,0), 
+#       fileName = "cGPC.vs.cAPC")
+# 
+# temp[] <-c(0,0,0,0,-1,1,0,0,0,0)
+# temp
+# 
+# runLR(ZLM.invivo, c(0,0,0,0,-1,1,0,0,0,0), 
+#       contrast0 = c(1,0,0,0,1,0,0,.5,.5,0), 
+#       contrast1 = c(1,0,0,0,0,1,0,.5,.5,0), 
+#       fileName = "imOL.vs.GPC")
+# 
+# temp[] <-c(0,0,0,0,0,-1,1,0,0,0)
+# temp
+# 
+# runLR(ZLM.invivo, c(0,0,0,0,0,-1,1,0,0,0), 
+#       contrast0 = c(1,0,0,0,0,1,0,.5,.5,0), 
+#       contrast1 = c(1,0,0,0,0,0,1,.5,.5,0), 
+#       fileName = "maOL.vs.imOL")
+# 
+# temp[] <- c(0,0,0,-1,0,1,0,0,0,0)
+# temp
+# 
+# runLR(ZLM.invivo, c(0,0,0,-1,0,1,0,0,0,0), 
+#       contrast0 = c(1,0,0,1,0,0,0,.5,.5,0), 
+#       contrast1 = c(1,0,0,0,0,1,0,.5,.5,0), 
+#       fileName = "imOL.vs.cGPC")
+# 
+# 
+# 
+# temp[] <- c(0,0,1,0,-1,0,0,0,0,0)
+# temp
+# 
+# runLR(ZLM.invivo, c(0,0,1,0,-1,0,0,0,0,0), 
+#       contrast0 = c(1,0,0,0,1,0,0,.5,.5,0), 
+#       contrast1 = c(1,0,1,0,0,0,0,.5,.5,0), 
+#       fileName = "cAPC.vs.GPC")
+# 
+
+
+
+```
+
+
+## Reload DE
+```{r}
+
+invivoComparisons <- c("imOL.vs.GPC", "maOL.vs.imOL", "imAstrocyte.vs.GPC", "Astrocyte.vs.imAstrocyte", "cGPC.vs.GPC", "cGPC.vs.cAPC", "imAstrocyte.vs.cAPC", "cAPC.vs.GPC", "imOL.vs.cGPC")
+
+
+for(i in invivoComparisons){
+  temp <- assign(i, read.delim(paste0("output/DE/",i,".txt")))
+  temp <- temp[complete.cases(temp),]
+  temp$comparison <- i
+  ident.1 <- sub("\\..*", "", i)
+  ident.2 <- sub(".*\\.", "", i)
+  tempExpDF <- expressionFractionsDF[,c("features.plot",ident.1, ident.2)]
+  tempExpDF <- tempExpDF[tempExpDF[,2] > 10 | tempExpDF[,3] > 10,]
+  tempSig <- temp[temp$FDR < 0.01 & abs(temp$logFC) > .25 & temp$gene %in% tempExpDF$features.plot,]
+  tempSig2 <- temp[temp$FDR < 0.01 & abs(temp$logFC) > .25,]
+  assign(paste0(i,".sig"), tempSig)
+  write.table(tempSig, paste0("output/DE/", i, ".sig.txt"), sep = "\t", row.names = F, quote = F) # Write sig to output
+}
+
+
+
+```
+
+
+## SCENIC DE
+```{r}
+
+#### SCENIC DE
+DefaultAssay(invivo) <- "SCENIC"
+
+DimPlot(invivo)
+
+imOL.vs.GPC.SCENIC <- FindMarkers(invivo, ident.1 = "imOL", ident.2 = "GPC", logfc.threshold = 0, min.pct = 0)
+imOL.vs.GPC.SCENIC$TF <- row.names(imOL.vs.GPC.SCENIC)
+imOL.vs.GPC.SCENIC.sig <- imOL.vs.GPC.SCENIC[imOL.vs.GPC.SCENIC$p_val_adj < 0.01,]
+write.table(imOL.vs.GPC.SCENIC.sig, "output/DE/imOL.vs.GPC.SCENIC.sig.txt", quote = F, sep = "\t", row.names = F)
+
+
+maOL.vs.imOL.SCENIC <- FindMarkers(invivo, ident.1 = "maOL", ident.2 = "imOL", logfc.threshold = 0, min.pct = 0)
+maOL.vs.imOL.SCENIC$TF <- row.names(maOL.vs.imOL.SCENIC)
+maOL.vs.imOL.SCENIC.sig <- maOL.vs.imOL.SCENIC[maOL.vs.imOL.SCENIC$p_val_adj < 0.01,]
+write.table(maOL.vs.imOL.SCENIC.sig, "output/DE/maOL.vs.imOL.SCENIC.sig.txt", quote = F, sep = "\t", row.names = F)
+
+
+imAstro.vs.GPC.SCENIC <- FindMarkers(invivo, ident.1 = "imAstrocyte", ident.2 = "GPC", logfc.threshold = 0, min.pct = 0)
+imAstro.vs.GPC.SCENIC$TF <- row.names(imAstro.vs.GPC.SCENIC)
+imAstro.vs.GPC.SCENIC.sig <- imAstro.vs.GPC.SCENIC[imAstro.vs.GPC.SCENIC$p_val_adj < 0.01,]
+write.table(imAstro.vs.GPC.SCENIC.sig, "output/DE/imAstro.vs.GPC.SCENIC.sig.txt", quote = F, sep = "\t", row.names = F)
+
+
+Astro.vs.imAstro.SCENIC <- FindMarkers(invivo, ident.1 = "Astrocyte", ident.2 = "imAstrocyte", logfc.threshold = 0, min.pct = 0)
+Astro.vs.imAstro.SCENIC$TF <- row.names(Astro.vs.imAstro.SCENIC)
+Astro.vs.imAstro.SCENIC.sig <- Astro.vs.imAstro.SCENIC[Astro.vs.imAstro.SCENIC$p_val_adj < 0.01,]
+write.table(Astro.vs.imAstro.SCENIC.sig, "output/DE/Astro.vs.imAstro.SCENIC.sig.txt", quote = F, sep = "\t", row.names = F)
+
+
+```
+## Make Specification Network
+```{r}
+
+#### SCENIC AUC DE
+library(jsonlite)
+regs <- read_json("output/SCENIC/invivoRegulonsTarget.json", simplifyVector = T) 
+weight <- read_json("output/SCENIC/invivoRegulonsWeight.json", simplifyVector = T) # TF to gene2weight based on target order
+names(regs) <- gsub("\\(.*", "", names(regs))
+names(weight) <- gsub("\\(.*", "", names(weight))
+
+
+
+### Make a data frame of all transcription factors and their respective targets and weights
+reg_res <- data.frame(TF=character(), Target=character(), Weight=numeric())
+for (i in 1:length(regs)) {
+  tf <- names(regs)[i]
+  numTarget <- length(regs[[i]])
+  tmp <- data.frame(TF=rep(tf, numTarget), Target=as.character(regs[[i]]), Weight=as.numeric(weight[[i]]))
+  reg_res <- rbind(reg_res, tmp)
+}
+
+#E Make a df of TFs, their AUCs, and their targets that are appropriately activated
+mergeTFgene <- function(gene, SCENIC, comparison){
+  temp <- merge(SCENIC, gene, by.x = "TF", by.y = "gene")
+  temp <- temp[temp$logFC * temp$avg_log2FC > 0,]
+  temp <- temp[,c(1,6,3,8,9)]
+  names(temp) <- c("TF","FDR_AUC", "Log2FC_AUC", "FDR_TF", "Log2FC_TF")
+  temp <-  merge(temp, reg_res, by.x = "TF", by.y = "TF")
+  temp <- merge(temp, gene, by.x = "Target", by.y = "gene")
+  temp <- temp[temp$Log2FC_AUC * temp$logFC > 0,]
+  temp$comparison <- comparison
+  temp <- temp[,c(2,1,3,4,5,6,9,10,11)]
+  names(temp)[7:8] <- c("FDR_Target", "Log2FC_Target")
+  temp <- temp[order(temp$Log2FC_Target, decreasing = T),]
+  return(temp)
+}
+
+
+imOL.vs.GPC.tf <- mergeTFgene(imOL.vs.GPC.sig, imOL.vs.GPC.SCENIC.sig, "imOL.vs.GPC")
+imOL.vs.GPC.tf[imOL.vs.GPC.tf$Log2FC_Target < 0,]$comparison <- "GPC.vs.imOL"
+write.table(imOL.vs.GPC.tf, "output/Networks/Invivo/imOL.vs.GPC.tf.txt", sep = "\t", row.names = F, quote = F)
+
+
+imAstro.vs.GPC.tf <- mergeTFgene(imAstrocyte.vs.GPC.sig, imAstro.vs.GPC.SCENIC.sig, "imAstro.vs.GPC")
+imAstro.vs.GPC.tf[imAstro.vs.GPC.tf$Log2FC_Target < 0,]$comparison <- "GPC.vs.imAstro"
+write.table(imAstro.vs.GPC.tf, "output/Networks/Invivo/imAstro.vs.GPC.tf.txt", sep = "\t", row.names = F, quote = F)
+
+
+maOL.vs.imOL.tf <- mergeTFgene(maOL.vs.imOL.sig, maOL.vs.imOL.SCENIC.sig, "maOL.vs.imOL")
+maOL.vs.imOL.tf[maOL.vs.imOL.tf$Log2FC_Target < 0,]$comparison <- "imOL.vs.maOL"
+write.table(maOL.vs.imOL.tf, "output/Networks/Invivo/maOL.vs.imOL.tf.txt", sep = "\t", row.names = F, quote = F)
+
+
+Astro.vs.imAstro.tf <- mergeTFgene(Astrocyte.vs.imAstrocyte.sig, Astro.vs.imAstro.SCENIC.sig, "Astro.vs.imAstro")
+Astro.vs.imAstro.tf[Astro.vs.imAstro.tf$Log2FC_Target < 0,]$comparison <- "imAstro.vs.Astro"
+write.table(imAstro.vs.GPC.tf, "output/Networks/Invivo/Astro.vs.imAstro.tf.txt", sep = "\t", row.names = F, quote = F)
+
+
+
+```
+
+## Oligo Differentiation
+```{r}
+
+
+TFs <- read.csv("data_for_import/TF_Functions.csv")
+activators <- TFs$Activators
+repressors <- TFs$Repressors
+repressors <- repressors[repressors != ""]
+
+specification.tf.oligo <- rbindlist(list(imOL.vs.GPC.tf, maOL.vs.imOL.tf))
+specification.tf.oligo$Log2FC_AUC <- abs(specification.tf.oligo$Log2FC_AUC )
+specification.tf.oligo$Log2FC_TF <- abs(specification.tf.oligo$Log2FC_TF )
+specification.tf.oligo$Log2FC_Target <- abs(specification.tf.oligo$Log2FC_Target )
+
+temp <- unique(specification.tf.oligo$comparison)
+names(temp) <- c("imOL.GPC", "GPC", "maOL", "imOL.maOL")
+specification.tf.oligo$enriched <- plyr::mapvalues(x = specification.tf.oligo$comparison, from = temp, to = names(temp))
+specification.tf.oligo$type <- "SCENIC"
+
+
+```
+
+
+## Oligo Network
+
+
+```{r}
+
+makeTFnetwork <- function(spec.filt, cellType, TFnodeDegree = 2, nTarget = 25, topGene = 11){
+  temp.filt <- spec.filt[spec.filt$enriched == cellType,]
+  temp.filt <- temp.filt[temp.filt$TF %not in% repressors,]
+  temp.filt <- temp.filt[order(temp.filt$Log2FC_Target, decreasing = T),]
+  #This takes the first nTarget that are targeted by TFnodeDegree
+  tempTarget <- c()
+  targets <- c()
+  tempTF <- c()
+  TFnodeDegree
+  for(i in unique(temp.filt$Target)){
+    tempTarget <- c(tempTarget, i)
+    tempTF <- c(tempTF, temp.filt[temp.filt$Target == i,]$TF)
+    keepTF <- unique(tempTF[table(tempTF) >= TFnodeDegree])
+    tempTarget <- tempTarget[tempTarget %not in% keepTF]
+    if(length(tempTarget) >= nTarget){
+      break
+    }
+  }
+  
+  temp.filt <- temp.filt[temp.filt$Target %in% tempTarget | temp.filt$Target %in% keepTF,]
+  temp.filt <- temp.filt[temp.filt$TF %in% keepTF,]
+  
+  highGene <- temp.filt[order(temp.filt$Log2FC_Target, decreasing = T),]
+  highGene <- highGene[highGene$Target %in% tempTarget,]
+  highGene <- highGene[!duplicated(highGene$Target),]
+  highGene <- highGene %>% dplyr::slice(1:topGene)
+  
+  temp.edges <- temp.filt[,c(1,2,9,11)]
+  names(temp.edges) <- c("Source", "Target", "Comparison", "Type")
+  temp.edges$tempSource <- paste0(temp.edges$Source, "_", cellType)
+  temp.edges$tempTarget <- paste0(temp.edges$Target, "_", cellType)
+  
+  temp.nodes <- data.frame(node = unique(c(temp.edges$Source, temp.edges$Target)))
+  temp.nodes$type <- ifelse(temp.nodes$node %in% temp.edges$Source, "TF", "Gene")
+  temp.nodes$show <- ifelse(temp.nodes$node %in% c(highGene$Target, keepTF), "Show", "Hide")
+  temp.nodes$tempLabel <- paste0(temp.nodes$node, "_", cellType)
+  temp.nodes$cellType <- cellType
+
+  network <- list(as.data.frame(temp.edges), as.data.frame(temp.nodes))
+  return(network)
+}
+
+
+GPCnetwork <- makeTFnetwork(spec.filt = specification.tf.oligo, cellType = "GPC", topGene = 10)
+imOL.vs.GPC.network <- makeTFnetwork(spec.filt = specification.tf.oligo[specification.tf.oligo$comparison == "imOL.vs.GPC",], cellType = "imOL.GPC", topGene = 10)
+imOL.vs.maOL.network <- makeTFnetwork(spec.filt = specification.tf.oligo[specification.tf.oligo$comparison == "imOL.vs.maOL",], cellType = "imOL.maOL", topGene = 10)
+maOLnetwork <- makeTFnetwork(spec.filt = specification.tf.oligo, cellType = "maOL", topGene = 10)
+
+
+oligoEdges <- rbindlist(list(GPCnetwork[[1]], imOL.vs.GPC.network[[1]], imOL.vs.maOL.network[[1]], maOLnetwork[[1]]))
+oligoNodes <- rbindlist(list(GPCnetwork[[2]], imOL.vs.GPC.network[[2]], imOL.vs.maOL.network[[2]], maOLnetwork[[2]]))
+
+highTF <- unique(oligoNodes[oligoNodes$type == "TF" & oligoNodes$show == "Show",]$node)
+highGene <-  unique(oligoNodes[oligoNodes$type == "Gene" & oligoNodes$show == "Show",]$node)
+
+highTF[highTF %not in% activators]
+
+
+write.table(oligoEdges, "output/Networks/Invivo/oligoEdges.txt", quote = F , row.names = F, sep = "\t")
+write.table(oligoNodes, "output/Networks/Invivo/oligoNodes.txt", quote = F , row.names = F, sep = "\t")
+
+
+
+```
+
+## Astro Differentiation
+```{r}
+
+specification.tf.astro <- rbindlist(list(imAstro.vs.GPC.tf, Astro.vs.imAstro.tf))
+specification.tf.astro$Log2FC_AUC <- abs(specification.tf.astro$Log2FC_AUC )
+specification.tf.astro$Log2FC_TF <- abs(specification.tf.astro$Log2FC_TF )
+specification.tf.astro$Log2FC_Target <- abs(specification.tf.astro$Log2FC_Target )
+
+temp <- unique(specification.tf.astro$comparison)
+names(temp) <- c("imAstro.GPC", "GPC", "Astro", "imAstro.Astro")
+specification.tf.astro$enriched <- plyr::mapvalues(x = specification.tf.astro$comparison, from = temp, to = names(temp))
+specification.tf.astro$type <- "SCENIC"
+
+
+
+```
+
+
+## Astro Network
+
+```{r}
+
+
+
+astroGPC.network <- makeTFnetwork(spec.filt = specification.tf.astro, cellType = "GPC", topGene = 10)
+imAstro.vs.GPC.network <- makeTFnetwork(spec.filt = specification.tf.astro[specification.tf.astro$comparison == "imAstro.vs.GPC",], cellType = "imAstro.GPC", topGene = 10)
+imAstro.vs.Astro.network <- makeTFnetwork(spec.filt = specification.tf.astro[specification.tf.astro$comparison == "imAstro.vs.Astro",], cellType = "imAstro.Astro", topGene = 10)
+astro.network <- makeTFnetwork(spec.filt = specification.tf.astro, cellType = "Astro", topGene = 10)
+
+
+astroEdges <- rbindlist(list(astroGPC.network[[1]], imAstro.vs.GPC.network[[1]], imAstro.vs.Astro.network[[1]], astro.network[[1]]))
+astroNodes <- rbindlist(list(astroGPC.network[[2]], imAstro.vs.GPC.network[[2]], imAstro.vs.Astro.network[[2]], astro.network[[2]]))
+
+highTF.astro <- unique(astroNodes[astroNodes$type == "TF" & astroNodes$show == "Show",]$node)
+highGene.astro <-  unique(astroNodes[astroNodes$type == "Gene" & astroNodes$show == "Show",]$node)
+
+highTF.astro[highTF.astro %not in% activators]
+
+write.table(astroEdges, "output/Networks/Invivo/astroEdges.txt", quote = F , row.names = F, sep = "\t")
+write.table(astroNodes, "output/Networks/Invivo/astroNodes.txt", quote = F , row.names = F, sep = "\t")
+
+
+
+```
+
+
+## Invivo Pseudotime
+```{r}
+
+sds <- slingshot(data = invivo@reductions$umap@cell.embeddings, clusterLabels = invivo$cellType)
+
+sds@metadata$lineages
+
+genes.keep <- unique(c(highTF, highGene, highTF.astro, highGene.astro))
+
+pseudotime <- slingPseudotime(sds, na = FALSE)
+cellWeights <- slingCurveWeights(sds)
+
+gamFit <- fitGAM(counts = invivo@assays$RNA@counts, pseudotime = pseudotime, cellWeights = cellWeights, nknots = 6, verbose = T, parallel=F, genes = which(row.names(invivo@assays$RNA@counts) %in% genes.keep))
+
+
+
+```
+
+## Gene smoothed HM Oligo
+```{r}
+
+identical(row.names(colData(gamFit)), row.names(invivo@meta.data))
+
+colData(gamFit)$cellType <- invivo$cellType
+
+
+yhatSmooth <- predictSmooth(gamFit, gene = genes.keep, nPoints = 100, tidy = F)
+
+m <-  apply(yhatSmooth, 1, mean, na.rm = T)
+s <-  apply(yhatSmooth, 1, sd, na.rm = T)
+zScore <- (yhatSmooth - m) / s
+
+
+zScoreLong <- zScore %>% set_rownames(row.names(.))  %>%
+  as_tibble(rownames = "row") %>%
+  pivot_longer(-row, names_to = "Pseudotime", values_to = "zScore")
+
+zScoreLongGene <- zScoreLong[zScoreLong$row %in% highGene,]
+#zScoreLongGene$row <- factor(zScoreLongGene$row, levels = genePseudotime)
+zScoreLongGene$Pseudotime <- factor(zScoreLongGene$Pseudotime, levels = colnames(zScore))
+
+zScoreLongTF <- zScoreLong[zScoreLong$row %in% highTF,]
+#zScoreLongTF$row <- factor(zScoreLongTF$row, levels = tfPseudotime)
+zScoreLongTF$Pseudotime <- factor(zScoreLongTF$Pseudotime, levels = colnames(zScore))
+
+min(zScoreLongTF$zScore)
+min(zScoreLongGene$zScore)
+max(zScoreLongTF$zScore)
+max(zScoreLongGene$zScore)
+
+# New order of genes/tfs based on 3rd max zScore
+zScoreOrder <- zScoreLong
+zScoreOrder$pseudo <- rep(1:100, nrow(zScore))
+#zScoreOrder <- zScoreOrder %>% group_by(row) %>% filter(zScore == max(zScore))
+zScoreOrder <- zScoreOrder %>% group_by(row) %>% filter(zScore == sort(zScore,partial=100-2)[100-2])
+zScoreOrder <- zScoreOrder[order(zScoreOrder$pseudo, decreasing = F),]
+
+zScoreLongGene$row <- factor(zScoreLongGene$row, levels = rev(zScoreOrder$row))
+zScoreLongTF$row <- factor(zScoreLongTF$row, levels = rev(zScoreOrder$row))
+
+
+zScoreLongTF[zScoreLongTF$zScore >2.3,]$zScore <- 2.3
+zScoreLongGene[zScoreLongGene$zScore >2.3,]$zScore <- 2.3
+
+
+temp <- zScoreLongTF[!duplicated(zScoreLongTF$row),]
+temp <- temp[match(levels(zScoreLongTF$row), temp$row),]
+temp <- temp[complete.cases(temp),]
+
+
+tfHMgg <- ggplot(zScoreLongTF, aes(Pseudotime, row)) + theme_bw() + geom_tile(aes(fill = zScore), colour = NA)  + theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank())  + 
+  scale_fill_viridis(limits = c(-2.3,2.3), option = "inferno")  + scale_x_discrete(expand = c(0,0)) + scale_y_discrete(expand = c(0,0)) + labs(title = "TF Gene Expression", tag = "A")
+
+
+
+tfHMgg
+
+temp <- zScoreLongGene[!duplicated(zScoreLongGene$row),]
+temp <- temp[match(levels(zScoreLongGene$row), temp$row),]
+temp <- temp[complete.cases(temp),]
+
+geneHMgg <- ggplot(zScoreLongGene, aes(Pseudotime, row)) + theme_bw() + geom_tile(aes(fill = zScore), colour = NA) + theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank())  + 
+  scale_fill_viridis(limits = c(-2.3,2.3), option = "magma")  + 
+  scale_x_discrete(expand = c(0,0)) + scale_y_discrete(expand = c(0,0)) + labs(title = "Target Gene Expression", tag = "C")
+
+geneHMgg
+
+
+tfHMgg | geneHMgg
+
+
+```
+
+```{r}
+
+
+
+zScoreLongGene.astro <- zScoreLong[zScoreLong$row %in% highGene.astro,]
+#zScoreLongGene$row <- factor(zScoreLongGene$row, levels = genePseudotime)
+zScoreLongGene.astro$Pseudotime <- factor(zScoreLongGene.astro$Pseudotime, levels = colnames(zScore))
+
+zScoreLongTF.astro <- zScoreLong[zScoreLong$row %in% highTF.astro,]
+#zScoreLongTF$row <- factor(zScoreLongTF$row, levels = tfPseudotime)
+zScoreLongTF.astro$Pseudotime <- factor(zScoreLongTF.astro$Pseudotime, levels = colnames(zScore))
+
+min(zScoreLongTF.astro$zScore)
+min(zScoreLongTF.astro$zScore)
+max(zScoreLongTF.astro$zScore)
+max(zScoreLongTF.astro$zScore)
+
+
+zScoreLongGene.astro$row <- factor(zScoreLongGene.astro$row, levels = rev(zScoreOrder$row))
+zScoreLongTF.astro$row <- factor(zScoreLongTF.astro$row, levels = rev(zScoreOrder$row))
+
+
+zScoreLongTF.astro[zScoreLongTF.astro$zScore >2.3,]$zScore <- 2.3
+zScoreLongGene.astro[zScoreLongGene.astro$zScore >2.3,]$zScore <- 2.3
+
+
+
+
+
+tfHMgg.astro <- ggplot(zScoreLongTF.astro, aes(Pseudotime, row)) + theme_bw() + geom_tile(aes(fill = zScore), colour = NA)  + theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank())  + 
+  scale_fill_viridis(limits = c(-2.3,2.3), option = "inferno")  + scale_x_discrete(expand = c(0,0)) + scale_y_discrete(expand = c(0,0)) + labs(title = "TF Gene Expression", tag = "A")
+
+
+
+tfHMgg.astro
+
+
+geneHMgg.astro <- ggplot(zScoreLongGene.astro, aes(Pseudotime, row)) + theme_bw() + geom_tile(aes(fill = zScore), colour = NA) + theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank())  + 
+  scale_fill_viridis(limits = c(-2.3,2.3), option = "magma")  + scale_x_discrete(expand = c(0,0)) + scale_y_discrete(expand = c(0,0)) + labs(title = "Target Gene Expression", tag = "C")
+
+geneHMgg.astro
+
+
+tfHMgg.astro | geneHMgg.astro
+
+
+
+
+
+```
+
+## AUC pseudotime
+
+```{r}
+
+# Fit GAM for SCENIC AUCs using slingshot based on gene expression
+gamFitAUC <- fitGAM(counts = invivo@assays$SCENIC@data, pseudotime = pseudotime, cellWeights = cellWeights, nknots = 6, verbose = T, parallel=F, genes = which(row.names(invivo@assays$SCENIC@data) %in% unique(c(highTF, highTF.astro))))
+
+identical(row.names(colData(gamFitAUC)), row.names(invivo@meta.data))
+
+colData(gamFitAUC)$cellType <- invivo$cellType
+
+yhatSmooth <- predictSmooth(gamFitAUC, gene = unique(c(highTF, highTF.astro)), nPoints = 100, tidy = F)
+
+m <-  apply(yhatSmooth, 1, mean, na.rm = T)
+s <-  apply(yhatSmooth, 1, sd, na.rm = T)
+zScore <- (yhatSmooth - m) / s
+
+
+zScoreLongAUC <- zScore %>% set_rownames(row.names(.))  %>%
+  as_tibble(rownames = "row") %>%
+  pivot_longer(-row, names_to = "Pseudotime", values_to = "zScore")
+
+zScoreLongAUC$row <- factor(zScoreLongAUC$row, levels = rev(zScoreOrder$row))
+zScoreLongAUC$Pseudotime <- factor(zScoreLongAUC$Pseudotime, levels = colnames(zScore))
+
+min(zScoreLongAUC$zScore)
+max(zScoreLongAUC$zScore)
+
+zScoreLongAUC[zScoreLongAUC$zScore >2.7,]$zScore <- 2.7
+zScoreLongAUC[zScoreLongAUC$zScore < -2.7,]$zScore <- -2.7
+
+
+
+
+aucHMgg <- ggplot(zScoreLongAUC[zScoreLongAUC$row %in% highTF,], aes(x = Pseudotime, y = row)) + theme_bw() + geom_tile(aes(fill = zScore), colour = NA) + theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank())  + 
+  scale_fill_viridis(limits = c(-2.7,2.7), option = "viridis")  + scale_x_discrete(expand = c(0,0)) + scale_y_discrete(expand = c(0,0)) + labs(title = "TF Regulon Activity", tag = "B")
+
+aucHMgg
+
+aucHMgg.astro <- ggplot(zScoreLongAUC[zScoreLongAUC$row %in% highTF.astro,], aes(x = Pseudotime, y = row)) + theme_bw() + geom_tile(aes(fill = zScore), colour = NA) + theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank())  + 
+  scale_fill_viridis(limits = c(-2.7,2.7), option = "viridis")  + scale_x_discrete(expand = c(0,0)) + scale_y_discrete(expand = c(0,0)) + labs(title = "TF Regulon Activity", tag = "B")
+
+aucHMgg.astro
+
+
+
+```
+
+## Pseudotime bars
+```{r}
+
+invivoMeta <- invivo@meta.data
+
+pseudotimeBars <- as.data.frame(pseudotime)
+pseudotimeBars <- merge(pseudotimeBars, invivoMeta[,c("cellName", "cellType")], by.x = 0, by.y = "cellName")
+pseudotimeBars$pseudotime <- ceiling(pseudotimeBars$Lineage1*(99/max(pseudotimeBars$Lineage1))+1)
+pseudotimeBars <- pseudotimeBars %>% group_by(pseudotime) %>% dplyr::summarise(label = names(which.max(table(cellType))))
+
+pseudotimeGGlabel <- ggplot(pseudotimeBars, aes(x = pseudotime, fill = label, y = "Cell Type")) + geom_tile() + scale_fill_manual(values = manuscriptPalette)  + labs(x = "Pseudotime", y = element_blank()) + scale_x_discrete(expand = c(0,0)) + scale_y_discrete(expand = c(0,0)) + theme(legend.position = "none")
+
+pseudotimeGGlabel
+
+
+```
+
+## Piece together Oligo
+```{r}
+
+((tfHMgg | aucHMgg  | geneHMgg) / (pseudotimeGGlabel | pseudotimeGGlabel | pseudotimeGGlabel ) / plot_spacer()) + plot_layout(heights = c(40,1.5,40))
+
+ggsave("output/Figures/Invivo_Oligo/invivo_oligo_differentiation.pdf", width = 8, height = 12)
+
+```
+
+## Piece together Astro
+```{r}
+
+((tfHMgg.astro | aucHMgg.astro  | geneHMgg.astro) / (pseudotimeGGlabel | pseudotimeGGlabel | pseudotimeGGlabel ) / plot_spacer()) + plot_layout(heights = c(40,1.5,40))
+
+ggsave("output/Figures/Invivo_Astro/invivo_astrocyte_differentiation.pdf", width = 8, height = 12)
+
+```
+
+
+## Pseudotime DimPlot
+```{r}
+
+colData(gamFit)$cellType <- invivo$cellType
+dim(invivo)
+
+figInvivoA <- DimPlotPseudotimeKnots(invivo, group.by = "cellType", curve = sds, models = gamFit, pt.size = 3) + xlim(c(-5,15)) + labs(tag = "A", title = "Integrated\n5,337 Cells")  + theme_bw() + theme_manuscript + theme(legend.position = "none") & scale_fill_manual(values = manuscriptPalette, name = "Cell Type") 
+figInvivoA
+
+
+
+```
+
+## Split by Line
+```{r}
+
+figInvivoB <- DimPlotCustom(invivo, split.by = "line", group.by = "cellType", ncol = 2, pt.size = 3) & theme_bw() & theme_manuscript & NoLegend() & theme(axis.title.y = element_blank(), axis.text.y = element_blank())  & scale_fill_manual(values = manuscriptPalette)
+
+table(invivo$line)
+
+figInvivoB[[1]] <- figInvivoB[[1]] + labs(tag = "B", title = "iPSC (C27)\n2,739 Cells") 
+figInvivoB[[2]] <- figInvivoB[[2]] + xlab("UMAP 1") + labs(title = "ESC (WA09)\n2,598 Cells")
+figInvivoB
+
+
+```
+
+## Marker Dot Plot
+```{r}
+
+DefaultAssay(invivo) <- "RNA"
+
+canonicalMarkers <- c("GFAP", "AQP4", "SOX9", "SLC1A2", "OLIG1", "OLIG2", "MKI67", "PDGFRA", "SOX10", "GPR17", "BCAS1", "MBP", "CNP", "PLP1", "MOBP", "NKX6-2")
+
+markerDotPlot <- DotPlot(invivo, features = canonicalMarkers)$data
+
+markerDotPlot$id <- factor(markerDotPlot$id, levels = rev(c("Astrocyte", "imAstrocyte", "cAPC", "cGPC", "GPC", "imOL", "maOL")))
+
+
+
+
+figInvivoC <- ggplot(markerDotPlot, aes(size = pct.exp, color = avg.exp.scaled, y = id, x = features.plot)) + 
+  geom_point() + 
+  scale_size_area(max_size = 15) + 
+  scale_color_viridis() + 
+  theme_bw() + 
+  theme_manuscript +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom") +
+  labs(tag = "C", title = "Canonical Marker Expression", size = "% Expressed", colour = "Scaled Expression") + 
+    guides(colour = guide_colorbar(title.position = "top", title.theme = element_text(size = axisTitleSize), barwidth = 15), 
+         size = guide_legend(title.position = "top", title.theme = element_text(size = axisTitleSize)))
+
+figInvivoC <- ggplot(markerDotPlot, aes(size = pct.exp, fill = avg.exp.scaled, y = id, x = features.plot)) + 
+  geom_point(color = "black", pch = 21) + 
+  scale_size_area(max_size = 15) + 
+  scale_fill_gradientn(colors = PurpleAndYellow()) + 
+  theme_bw() + 
+  theme_manuscript +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom") +
+  labs(tag = "C", title = "Canonical Marker Expression", size = "% Expressed", colour = "Scaled Expression") + 
+    guides(colour = guide_colorbar(title.position = "top", title.theme = element_text(size = axisTitleSize), barwidth = 15), 
+         size = guide_legend(title.position = "top", title.theme = element_text(size = axisTitleSize)))
+
+
+figInvivoC
+
+```
+## Top Figure
+```{r}
+
+top <- (figInvivoA | figInvivoB | figInvivoC) + plot_layout(widths = c(1,2,1.2))
+
+top
+
+ggsave(plot = top, filename  ="output/Figures/Invivo/invivoTop.pdf", width = 30, height = 12)
+
+
+```
+
+## Pluripotent Markers
+```{r}
+
+figInvivoD <-  FeaturePlotCustom(invivo, genes = c("POU5F1", "LIN28A"), ncol = 1, sharedScale = "Gene", pt.size = 2, ) & theme_bw() & theme_manuscript
+
+figInvivoD[[1]] <- figInvivoD[[1]] + NoLegend() + labs(tag = "D")
+figInvivoD[[2]] <- figInvivoD[[2]] + theme(legend.position = "bottom") + guides( color = guide_colorbar(
+      direction = "horizontal",
+      title.position = "top", barwidth = 15, title = "Normalized Expression"))
+
+
+
+
+
+figInvivoD
+
+
+```
+
+
+## GPC Markers
+```{r}
+
+GPCenriched <- rbind(imOL.vs.GPC.sig[imOL.vs.GPC.sig$logFC < 0,], imAstrocyte.vs.GPC.sig[imAstrocyte.vs.GPC.sig$logFC < 0,])
+GPCenriched <- GPCenriched[GPCenriched$gene %in% GPCenriched[duplicated(GPCenriched$gene),]$gene
+,]
+
+GPCenriched <- GPCenriched %>% dplyr::group_by(gene) %>%
+  dplyr::mutate(meanLogFC = mean(logFC))
+
+GPCenriched <- GPCenriched[order(GPCenriched$meanLogFC, decreasing = F),]
+
+invivo <- ScaleData(invivo, features = unique(GPCenriched$gene[1:60]))
+
+
+figInvivoE <-  DoHeatmap(subset(invivo, idents = c("imAstrocyte", "GPC", "imOL")), features = unique(GPCenriched$gene[1:60]), label = F, group.colors = c("firebrick2", "turquoise", "gold")) + 
+  theme(legend.position = "bottom", axis.text = element_text(size = axisTextSize),  plot.tag = element_text(size = tagSize), legend.title = element_text(size = axisTitleSize), legend.text = element_text(size = axisTitleSize), plot.title = element_text(size = titleFont)) +
+  labs(tag = "E", title = "GPC Enriched Genes") +
+  guides(color = "none", fill = guide_colorbar(
+      direction = "horizontal",
+      title.position = "top", barwidth = 15, title = "Scaled Expression"))
+
+figInvivoE
+
+```
+
+
+## Cycling Genes
+```{r}
+
+cyclingEnriched <- rbind(cGPC.vs.GPC.sig[cGPC.vs.GPC.sig$logFC > 0,], cAPC.vs.GPC.sig[cAPC.vs.GPC.sig$logFC > 0,])
+cyclingEnriched <- cyclingEnriched[cyclingEnriched$gene %in% cyclingEnriched[duplicated(cyclingEnriched$gene),]$gene
+,]
+
+cyclingEnriched <- cyclingEnriched %>% dplyr::group_by(gene) %>%
+  dplyr::mutate(meanLogFC = mean(logFC))
+
+cyclingEnriched <- cyclingEnriched[order(cyclingEnriched$meanLogFC, decreasing = T),]
+
+invivo <- ScaleData(invivo, features = unique(cyclingEnriched$gene[1:60]))
+
+
+figInvivoF <-  DoHeatmap(subset(invivo, idents = c("cGPC", "GPC", "cAPC")), features = unique(cyclingEnriched$gene[1:60]), label = F, group.colors = c("forestgreen", "darkorange", "turquoise"), ) + theme(legend.position = "bottom", axis.text = element_text(size = axisTextSize),  plot.tag = element_text(size = tagSize), legend.title = element_text(size = axisTitleSize), legend.text = element_text(size = axisTitleSize), plot.title = element_text(size = titleFont)) +
+  guides(color = "none", fill = guide_colorbar(
+      direction = "horizontal",
+      title.position = "top", barwidth = 15, title = "Scaled Expression")) + labs(tag = "F", title = "Cycling Enriched Genes")
+
+figInvivoF
+
+
+
+
+
+```
+## cGPC vs cAPC
+```{r}
+
+ keyvals <- ifelse(
+    cGPC.vs.cAPC$FDR > 0.01, 'lightgrey',
+      ifelse(cGPC.vs.cAPC$logFC > .25, 'forestgreen',
+        ifelse(cGPC.vs.cAPC$logFC < -.25, "darkorange", "lightgrey")))
+
+names(keyvals)[keyvals == 'lightgrey'] <- 'N.S.'
+names(keyvals)[keyvals == 'forestgreen'] <- 'cGPC Enriched'
+names(keyvals)[keyvals == 'darkorange'] <- 'cAPC Enriched'
+
+selectLab = cGPC.vs.cAPC.sig[abs(cGPC.vs.cAPC.sig$logFC) > 1.25,]$gene
+selectLab <- c(selectLab, "CA10", "OLIG2", "SOX10", "CNTN1", "PLLP", "BAMBI", "LUZP2", "NXPH1", "GRIA2",
+               "ID4", "GLUL", "NFIA", "DLX1", "DLX2")
+
+figInvivoG <- EnhancedVolcano(cGPC.vs.cAPC, labSize  = 9,
+                xlab = "Log2FC cGPC vs cAPC",
+                lab = cGPC.vs.cAPC$gene,
+                x = 'logFC',
+                y = 'FDR',
+                xlim = c(-2,2),
+                selectLab = selectLab,
+                pCutoff = 0.01,
+                FCcutoff = .25,
+                colCustom = keyvals,
+                drawConnectors = T) + theme_bw() + theme_manuscript + theme(plot.subtitle = element_blank(), plot.caption = element_blank(), legend.position = "bottom", legend.title = element_blank()) + labs(tag = "G", title = "cGPC vs cAPC Differential Expression")
+
+figInvivoG
+
+```
+
+## Middle
+```{r}
+
+middle <- (figInvivoD | figInvivoE | figInvivoF | figInvivoG) + plot_layout(widths = c(.8,1,1,1.3))
+
+
+
+topMiddle <- top / middle
+
+ggsave(topMiddle, filename  ="output/Figures/Invivo/invivoTopMiddle2.pdf", width = 30, height = 24)
+
+```
+
+# Supplementary Figure
+
+## Leiden Clusters
+
+```{r}
+
+dimLeidenFig <- DimPlotCustom(invivo, group.by = "leiden_clusters", ncol = 1, label = T, pt.size = 3) & theme_bw() & theme_manuscript & NoLegend()  & ggtitle("In Vivo Leiden Clusters") & labs(tag = "A")
+
+dimLeidenFig
+
+
+```
+
+## Leiden Markers
+```{r}
+
+DefaultAssay(invivo) <- "RNA"
+
+canonicalMarkers <- c("GFAP", "AQP4", "SOX9", "SLC1A2", "OLIG1", "OLIG2", "MKI67", "PDGFRA", "SOX10", "GPR17", "BCAS1", "MBP", "CNP", "PLP1", "MOBP", "NKX6-2")
+
+markerDotPlotSupp <- DotPlot(invivo, features = canonicalMarkers, group.by = "leiden_clusters")$data
+
+leidenTemp <- c("7", "4", "9", "8", "5", "0", "1", "2", "6", "3")
+names(leidenTemp) <- c("7 - Astrocyte", 
+                       "4 - imAstrocyte", 
+                       "9 - cAPC",
+                       "8 - cGPC",
+                       "5 - GPC",
+                       "0 - GPC",
+                       "1 - imOL",
+                       "2 - imOL",
+                       "6 - maOL",
+                       "3 - maOL")
+leidenTemp
+
+markerDotPlotSupp$id <- mapvalues(as.character(markerDotPlotSupp$id), from = leidenTemp, to = names(leidenTemp))
+
+markerDotPlotSupp$id <- factor(markerDotPlotSupp$id, levels = rev(c("7 - Astrocyte", 
+                       "4 - imAstrocyte", 
+                       "9 - cAPC",
+                       "8 - cGPC",
+                       "5 - GPC",
+                       "0 - GPC",
+                       "1 - imOL",
+                       "2 - imOL",
+                       "6 - maOL",
+                       "3 - maOL")))
+
+
+
+figSuppMarkerPlot<- ggplot(markerDotPlotSupp, aes(size = pct.exp, fill = avg.exp.scaled, y = id, x = features.plot)) +
+  geom_point(color = "black", pch = 21) + 
+  scale_size_area(max_size = 15) + 
+  scale_fill_gradientn(colors = PurpleAndYellow()) + 
+  theme_bw() + 
+  theme_manuscript +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom") +
+  labs(tag = "B", title = "Canonical Marker Expression", size = "% Expressed", fill = "Scaled Expression") + 
+    guides(colour = guide_colorbar(title.position = "top", title.theme = element_text(size = axisTitleSize), barwidth = 15), 
+         size = guide_legend(title.position = "top", title.theme = element_text(size = axisTitleSize)))
+
+
+figSuppMarkerPlot
+
+
+```
+
+```{r}
+
+
+
+invitroInvivo <- readRDS("output/RDS/invitroInvivo.rds")
+
+invivoAlluvial <- subset(invitroInvivo, subset = stage == "In Vivo")
+
+invivoAlluvial <- as.data.frame(table(invivoAlluvial@meta.data$cellType, invivoAlluvial@meta.data$invivoCellType))
+invivoAlluvial <- invivoAlluvial[invivoAlluvial$Var1 %in% c("GPC4", "imOL", "maOL", "Astrocyte"),]
+
+invivoAlluvial$Var1 <- droplevels(invivoAlluvial$Var1)
+
+
+invivoAlluvial$Var2 <- factor(invivoAlluvial$Var2, levels = c("GPC4", "GPC", "cGPC", "imOL", "maOL", "cAPC", "imAstrocyte", "Astrocyte"))
+
+invivoAlluvial$Var1 <- factor(invivoAlluvial$Var1, levels = c("GPC4", "GPC", "cGPC", "imOL", "maOL", "cAPC", "imAstrocyte", "Astrocyte"))
+
+invivoAlluvial$Var2 
+
+levels(invivoAlluvial$Var2)
+levels(invivoAlluvial$Var1)
+
+
+
+figAlluvial <- ggplot(data = invivoAlluvial,
+       aes(axis1 = Var1, axis2 = Var2, y = Freq)) +
+  geom_alluvium(aes(fill = Var2)) +
+  geom_stratum() +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(stratum))) +
+  theme_void() + scale_fill_manual(values = manuscriptPalette) + NoLegend() + labs(tag = "C", title = "Cell Type Assignment across Integrations") + theme(plot.tag = element_text(size = tagSize))
+
+figAlluvial
+
+
+```
+
+## Cell Cycle Scoring
+```{r}
+
+
+DefaultAssay(invivo) <- "RNA"
+
+#### Cell Cycle Scoring
+
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+#MLF1IP
+s.genes[s.genes %not in% invivo@assays$RNA@counts@Dimnames[[1]]] <- "CENPU"
+s.genes[s.genes %not in% invivo@assays$RNA@counts@Dimnames[[1]]]
+
+#FAM64A HN1
+g2m.genes[g2m.genes %not in% invivo@assays$RNA@counts@Dimnames[[1]]] <- c("PIMREG", "JPT1")
+g2m.genes[g2m.genes %not in% invivo@assays$RNA@counts@Dimnames[[1]]]
+
+invivo <- CellCycleScoring(invivo, s.features = s.genes, g2m.features = g2m.genes, set.ident = F)
+
+head(invivo$G2M.Score)
+
+DimPlot(invivo, group.by = "Phase")
+
+figInvivoCellCycle <-  VlnPlot(invivo, c("G2M.Score", "S.Score"), ncol = 1, pt.size = 0) & 
+  theme_bw() &
+  theme_manuscript &
+  NoLegend() &
+  theme(axis.title.x = element_blank()) &
+  scale_fill_manual(values = manuscriptPalette)
+
+
+figInvivoCellCycle[[1]] <- figInvivoCellCycle[[1]] + theme(axis.text.x = element_blank()) + labs(tag = "D", title = "G2M Phase Score")
+
+figInvivoCellCycle[[2]] <- figInvivoCellCycle[[2]] + ggtitle("S Phase Score")
+
+figInvivoCellCycle
+
+
+```
+
+## Piece together supplemental
+```{r}
+
+(dimLeidenFig | figSuppMarkerPlot) / (figAlluvial | figInvivoCellCycle)
+
+ggsave(filename  ="output/Figures/Invivo/invivoSupplemental.pdf", width = 30, height = 24)
+
+
+
+```
+
+
+
+```{r}
+
+sessionInfo()
+
+```

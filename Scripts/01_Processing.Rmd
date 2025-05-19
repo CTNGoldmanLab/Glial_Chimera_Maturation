@@ -1,0 +1,152 @@
+---
+title: "Processing of all scRNA-Seq Data"
+author: "John Mariani"
+date: "3/6/2023"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+```
+
+## Load in Libraries
+
+```{r, message=F}
+
+library(dplyr)
+library(Seurat)
+library(devtools)
+library(patchwork)
+library(SeuratDisk)
+
+options(future.globals.maxSize = 16000 * 1024^2)
+
+```
+
+## Read in Human and Mouse Counts
+
+```{r}
+
+sampleList <- list.files("data_for_import/Matrices/")
+
+sampleData <- read.csv("data_for_import/sampleData.csv")
+
+sampleList <- sampleList[sampleList %in% sampleData$sample]
+
+rawH <- sapply(sampleList, function(x) {print(x) ; Read10X(paste0("data_for_import/Matrices/",x,"/human"))})
+rawM <- sapply(sampleList, function(x) {print(x) ; Read10X(paste0("data_for_import/Matrices/",x,"/mouse"))})
+
+# Remove EGFP from tagged C27s
+tail(rownames(rawH[[1]]))
+tail(rownames(rawM[[1]]))
+
+dim(rawH[[1]])
+dim(rawM[[1]])
+
+
+rawH[[1]] <- rawH[[1]][-39606,]
+rawH[[2]] <- rawH[[2]][-39606,]
+
+rawM[[1]] <- rawM[[1]][-34040,]
+rawM[[2]] <- rawM[[2]][-34040,]
+
+
+sets <- length(rawH)
+
+#Update Cell names with sample name appended
+for(i in 1:sets){ 
+  colnames(rawH[[i]]) <- paste0(colnames(rawH[[i]]),"_",sampleList[i])
+  colnames(rawM[[i]]) <- paste0(colnames(rawM[[i]]),"_",sampleList[i])
+}
+
+head(colnames(rawH[[1]]))
+
+```
+
+## Filter for quality and merge datasets
+```{r}
+
+seurat.objectsH <- sapply(c(1:sets), function(x) CreateSeuratObject(rawH[[x]], project = sampleList[x]))
+seurat.objectsH <- sapply(c(1:sets), function(x) PercentageFeatureSet(seurat.objectsH[[x]], pattern = "^MT-", col.name = "percent.mt"))
+
+seurat.objectsM <- sapply(c(1:sets), function(x) CreateSeuratObject(rawM[[x]], project = sampleList[x]))
+seurat.objectsM <- sapply(c(1:sets), function(x) PercentageFeatureSet(seurat.objectsM[[x]], pattern = "^mt-", col.name = "percent.mt"))
+
+
+for (i in 1:sets) {
+    seurat.objectsH[[i]] <- subset(x = seurat.objectsH[[i]], subset = nFeature_RNA > 500 & percent.mt < 15)
+}
+
+
+#Subset to only samples that actually have mouse cells
+seurat.objectsM <- seurat.objectsM[c(3:5,8,14)]
+
+for (i in 1:length(seurat.objectsM)) {
+  seurat.objectsM[[i]] <- subset(x = seurat.objectsM[[i]], subset = nFeature_RNA > 500 & percent.mt < 15)
+}
+
+
+mergedH <- merge(seurat.objectsH[[1]], y = seurat.objectsH[2:length(seurat.objectsH)])
+mergedM <- merge(seurat.objectsM[[1]], y = seurat.objectsM[2:length(seurat.objectsM)])
+
+```
+
+## Update metadata
+```{r}
+
+
+metaMergedH <- mergedH@meta.data
+metaMergedH$cellName <- row.names(metaMergedH)
+identical(metaMergedH$cellName, Cells(mergedH))
+
+
+metaMergedH <- merge(metaMergedH, sampleData, by.x = "orig.ident", by.y = "sample")
+row.names(metaMergedH) <- metaMergedH$cellName
+metaMergedH <- metaMergedH[match(Cells(mergedH), metaMergedH$cellName),]
+identical(metaMergedH$cellName, Cells(mergedH))
+
+
+mergedH@meta.data <- metaMergedH
+
+
+#### Mouse
+
+metaMergedM <- mergedM@meta.data
+metaMergedM$cellName <- row.names(metaMergedM)
+identical(metaMergedM$cellName, Cells(mergedM))
+metaMergedM <- merge(metaMergedM, sampleData, by.x = "orig.ident", by.y = "sample")
+row.names(metaMergedM) <- metaMergedM$cellName
+metaMergedM <- metaMergedM[match(Cells(mergedM), metaMergedM$cellName),]
+identical(metaMergedM$cellName, Cells(mergedM))
+
+mergedM@meta.data <- metaMergedM
+
+dim(mergedH)
+dim(mergedM)
+
+```
+
+## Output Data for SCVI integration
+```{r}
+
+saveRDS(mergedH, "output/RDS/mergedH.rds")
+saveRDS(mergedM, "output/RDS/mergedM.rds")
+
+library(SeuratDisk)
+SaveH5Seurat(mergedH, filename = "output/H5AD/mergedH.h5Seurat", overwrite = T)
+Convert("output/H5AD/mergedH.h5Seurat", dest = "h5ad", overwrite = T)
+
+SaveH5Seurat(mergedM, filename = "output/H5AD/mergedM.h5Seurat", overwrite = T)
+Convert("output/H5AD/mergedM.h5Seurat", dest = "h5ad", overwrite = T)
+
+
+```
+
+```{r}
+
+sessionInfo()
+
+```
+

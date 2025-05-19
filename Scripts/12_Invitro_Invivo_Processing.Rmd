@@ -1,0 +1,166 @@
+---
+title: "Initial Analysis of Human Cells out of Shiverer Chimeras"
+author: "John Mariani"
+date: "12/6/2022"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(Seurat)
+library(devtools)
+library(ggplot2)
+library(RColorBrewer)
+library(cowplot)
+library(biomaRt)
+library(tidyr)
+library(ggplotify)
+library(biomaRt)
+#library(RPushbullet)
+library(patchwork)
+library(dplyr)
+library(SeuratDisk)
+library(MAST)
+library(data.table)
+library(scPlottingTools)
+library(scales)
+#BiocManager::install("slingshot")
+library(slingshot)
+#BiocManager::install("tradeSeq")
+library(tradeSeq)
+library(MAST)
+
+`%not in%` <- function(x, table) is.na(match(x, table, nomatch = NA_integer_))
+
+axisTitleSize <- 8
+axisTextSize <- 6
+labelFont = 6
+titleFont = 10
+tagSize = 10
+
+source("Scripts/HelperFunctions.R")
+
+
+```
+
+## Prep invitroInvivo
+```{r}
+
+merged <- readRDS("output/RDS/mergedH.rds")
+invitroInvivo <- subset(merged, subset = stage %in% c("In Vivo", "In Vitro - GPC Stage"))
+
+embeddings <- read.csv("output/scVI/Invitro_Invivo_umapEmbeddings.csv", header = F)
+names(embeddings) <- c("UMAP_1", "UMAP_2")
+row.names(embeddings) <- Cells(invitroInvivo)
+invitroInvivo[['umap']] <- CreateDimReducObject(embeddings = as.matrix(embeddings), key = "UMAP_", assay = "RNA")
+
+leidenClusters <- read.csv("output/scVI/Invitro_Invivo_leiden.csv")
+invitroInvivo$leiden_clusters <- as.factor(leidenClusters$leiden_scVI)
+Idents(invitroInvivo) <- invitroInvivo$leiden_clusters
+
+
+DimPlot(invitroInvivo, split.by = "stage")
+
+invitroInvivo <- RenameIdents(invitroInvivo,
+                              "7" = "imOL",
+                              "8" = "maOL",
+                              "2" = "GPC2",
+                              "1" = "GPC1", 
+                              "4" = "GPC3",
+                              "5" = "GPC4",
+                              "9" = "Astrocyte",
+                              "3" = "GPC2",
+                              "0" = "NPC",
+                              "6" = "NPC")
+
+DimPlot(invitroInvivo, label = T)
+
+
+Idents(invitroInvivo) <- factor(Idents(invitroInvivo), levels = c("NPC", "GPC1", "GPC2", "GPC3", "GPC4", "imOL", "maOL", "Astrocyte"))
+
+```
+
+## Make GPC4 Transition subset with information from invivo
+```{r}
+
+invitroInvivo$cellType <- Idents(invitroInvivo)
+
+invitroInvivoMeta <- invitroInvivo@meta.data
+
+## Load In Vivo only object
+invivo <- readRDS("output/RDS/invivo.rds")
+
+invivoMeta <- invivo@meta.data
+
+table(invivoMeta$cellType)
+
+temp <- invivoMeta$cellName
+
+names(temp) <- invivoMeta$cellType
+
+
+invitroInvivoMeta$invivoCellType <- plyr::mapvalues(x = as.character(invitroInvivoMeta$cellName), from = temp, to =  names(temp))
+
+invitroInvivoMeta[invitroInvivoMeta$invivoCellType %not in% levels(invivo$cellType),]$invivoCellType <- "invitro"
+
+table(invitroInvivoMeta$invivoCellType)
+identical(invitroInvivoMeta$cellName, Cells(invitroInvivo))
+
+invitroInvivo@meta.data <- invitroInvivoMeta
+
+### Make Transition
+
+transition <- subset(invitroInvivo, subset = leiden_clusters == 5)
+
+table(transition$invivoCellType)
+
+transition <- subset(transition, subset = invivoCellType %in% c("GPC", "cGPC", "invitro"))
+
+DimPlot(transition)
+
+
+saveRDS(transition, "output/RDS/GPC4_Cluster.rds")
+saveRDS(invitroInvivo, "output/RDS/invitroInvivo.rds")
+
+```
+
+## Expression for palantir starting and terminal cells
+```{r}
+
+FeaturePlotCustom(invitroInvivo, "DLX5")
+
+FeaturePlotCustom(invitroInvivo, "MAL")
+
+FeaturePlotCustom(invitroInvivo, "CLU")
+
+FeaturePlotCustom(invitroInvivo, "NSG2")
+
+palantirMarkers <- c("DLX5", "MOBP", "AGT", "NSG2")
+
+palantirMarkers <- FetchData(invitroInvivo, vars = palantirMarkers, slot = "data")
+
+max_row_names <- apply(palantirMarkers, 2, function(x) rownames(palantirMarkers)[which.max(x)])
+max_row_names
+
+
+
+
+```
+
+
+
+
+
+
+```{r}
+
+sessionInfo()
+
+```

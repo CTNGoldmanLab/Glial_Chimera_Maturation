@@ -1,0 +1,225 @@
+---
+title: "Initial Analysis of Mouse Cells"
+author: "John Mariani"
+date: "12/6/2022"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+library(Seurat)
+library(scPlottingTools)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(MAST)
+library(plyr)
+library(xlsx)
+library(patchwork)
+library(ggplot2)
+library(scales)
+library(ggVennDiagram)
+library(data.table)
+library(slingshot)
+library(tradeSeq)
+library(tidyr)
+library(dplyr)
+library(plyr)
+library(magrittr)
+library(viridis)
+
+`%not in%` <- function(x, table) is.na(match(x, table, nomatch = NA_integer_))
+
+
+axisTitleSize <- 8
+axisTextSize <- 6
+labelFont = 6
+titleFont = 8
+tagSize = 10
+
+
+# axisTitleSize <- 24
+# axisTextSize <- 18
+# labelFont = 18
+# titleFont = 22
+
+source("Scripts/HelperFunctions.R")
+
+theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 
+        axis.title = element_text(size = axisTitleSize), 
+        title = element_text(size = titleFont), 
+        legend.title = element_text(size = titleFont),
+        legend.text = element_text(size = axisTitleSize),
+        plot.tag = element_text(size = tagSize))
+
+manuscriptPalette <- c("In Vivo" = "red2", 
+                       "In Vitro - GPC Stage" = "#2E30FF",
+                       "NPC" = "magenta",
+                       "GPC1" = "forestgreen",
+                       "GPC2" = "darkorange",
+                       "GPC3" = "firebrick2",
+                       "GPC4" = "turquoise",
+                       "Astrocyte" = "dodgerblue2",
+                       "imOL" = "gold",
+                       "maOL" = "darkorchid4",
+                       "GPC" = "turquoise",
+                       "imAstrocyte" = "firebrick2",
+                       "cGPC" = "darkorange",
+                       "cAPC" = "forestgreen")
+
+```
+
+```{r}
+
+source("Scripts/HelperFunctions.R")
+
+
+```
+
+## Load In Vivo Data and scVI data
+```{r}
+
+mouse <- readRDS("output/RDS/mergedM.rds")
+mouse <- NormalizeData(mouse)
+
+mouseEmbeddings <- read.csv("output/scVI/Mouse_umapEmbeddings.csv", header = F)
+names(mouseEmbeddings) <- c("UMAP_1", "UMAP_2")
+row.names(mouseEmbeddings) <- Cells(mouse)
+mouse[['umap']] <- CreateDimReducObject(embeddings = as.matrix(mouseEmbeddings), key = "UMAP_", assay = "RNA")
+
+leidenClusters <- read.csv("output/scVI/Mouse_leidenClusters.csv")
+mouse$leidenClusters <- factor(leidenClusters$leiden_scVI, levels = 0:max(leidenClusters$leiden_scVI))
+
+
+DimPlot(mouse, reduction = "umap", group.by = "leidenClusters", label = T) + NoLegend() 
+
+mouse <- SetIdent(mouse, value = mouse$leidenClusters)
+
+```
+
+## Initial Cell Type markers for simplification
+
+```{r}
+
+VlnPlot(mouse, c("Pdgfra", "Bcas1", "Mobp", "Gfap", "Acta2", "Cspg4", "Pdgfrb", "Aif1", "Pecam1"))
+
+
+```
+
+## Assign Celltype names
+```{r}
+
+mouse <- RenameIdents(mouse, c("0" = "maOL",
+                          "1" = "maOL",
+                          "2" = "maOL",
+                          "3" = "maOL",
+                          "4" = "maOL",
+                          "5" = "maOL",
+                          "6" = "maOL",
+                          "7" = "Endothelial",
+                          "8" = "maOL",
+                          "9" = "maOL",
+                          "10" = "maOL",
+                          "11" = "maOL",
+                          "12" = "maOL",
+                          "13" = "Microglia",
+                          "14" = "imOL",
+                          "15" = "GPC",
+                          "16" = "Astrocyte",
+                          "17" = "NPC",
+                          "18" = "Ependymal",
+                          "19" = "Pericyte",
+                          "20" = "Macrophage"))
+
+DimPlot(mouse)
+
+
+
+otherMarkers <- c("Pf4", "Clec4n", "Dlx1", "Dcx", "Dlx2", "Gad2", "Cd163", "Cxcr4", "Mrc1", "Foxj1", "Pifo")
+
+VlnPlot(mouse, otherMarkers)
+
+unique(Idents(mouse))
+
+mouseLevels <- c("GPC", "imOL", "maOL", "Astrocyte", "Microglia", "Endothelial", "Pericyte", "NPC", "Macrophage", "Ependymal")
+
+Idents(mouse) <- factor(Idents(mouse), levels = mouseLevels)
+
+mouse$cellType <- Idents(mouse)
+
+mouseDim <- DimPlotCustom(mouse, group.by = "cellType", label = T) + theme_bw() + theme_manuscript + theme(legend.position = "bottom") + labs(tag = "A")
+mouseDim
+
+```
+
+```{r}
+
+# allMouseMarkers <- FindAllMarkers(mouse, test.use = "MAST")
+# write.table(allMouseMarkers, "output/DE/MouseMarkers.txt", sep = "\t", quote = F, row.names = F)
+
+
+# This will limit which come from the next function
+mouseMarkers <- c("Pdgfra", "Ptprz1", 
+                  "Gpr17", "Bcas1", 
+                  "Nkx6-2", "Mog",
+                  "Gfap", "Aqp4",
+                  "P2ry12", "Itgam",
+                  "Cldn5", "Pecam1",
+                  "Acta2", "Des",
+                  "Dlx2", "Elavl4",
+                  "Pf4", "Cd163",
+                  "Tmem212", "Ccdc153")
+
+#You can extract percent expression from this seurat function... providing features makes it way faster. $data is what you want 
+mouseDotPlot <- DotPlot(mouse, features = mouseMarkers)$data
+
+# For ordering in the plot
+mouseDotPlot$id <- factor(mouseDotPlot$id , levels = rev(mouseLevels))
+
+
+
+
+
+figMouseB <- ggplot(mouseDotPlot, aes(size = pct.exp, color = avg.exp.scaled, y = id, x = features.plot)) + 
+  geom_point() + 
+  scale_size_area() + 
+  scale_color_viridis() + 
+  theme_bw() + 
+  theme_manuscript +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom") +
+  labs(tag = "B", title = "Canonical Marker Expression", size = "% Expressed", colour = "Scaled Expression") + 
+    guides(colour = guide_colorbar(title.position = "top", title.theme = element_text(size = axisTitleSize)), 
+         size = guide_legend(title.position = "top", title.theme = element_text(size = axisTitleSize))) +
+  scale_size(range = c(0,4))
+
+figMouseB
+
+
+
+
+```
+
+```{r}
+
+
+(mouseDim | figMouseB) + plot_layout(widths = c(1,1.5))
+#ggsave("Figures/mouseFig.pdf", width = 12, height = 6)
+
+```
+
+
+```{r}
+saveRDS(mouse, "output/RDS/mouse.rds")
+
+```
+
+```{r}
+
+sessionInfo()
+
+```

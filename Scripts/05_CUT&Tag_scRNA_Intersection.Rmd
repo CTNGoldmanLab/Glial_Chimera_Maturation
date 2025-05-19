@@ -1,0 +1,438 @@
+---
+title: "Plot_heatmap_RNA_chromatin"
+output: github_document
+date: "2024-07-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+### load library
+```{r, warning=FALSE, message = FALSE}
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(RColorBrewer)
+library(pheatmap)
+library(VennDiagram)
+
+```
+
+### read in gene expression data
+```{r}
+
+#folder with gene expression data
+ifolder <- "output/DE/"
+
+#folder to store filtered gene list for genomic coverage plotting with deeptools later
+ofolder <- "output/CUT&Tag/genomicCoverage/"
+
+#read in the MAST differential expression result of scRNA-seq 
+ALLgene <- read.table(paste(ifolder, "GPC.vs.PSC.allFC.txt", sep = "/"), header = TRUE)
+ALLgene <- na.omit(ALLgene)
+colnames(ALLgene) <- c("Gene", "RNA_p-value", "RNA_FDR", "RNA_Log2FC")
+ALLgene$Gene <- factor(ALLgene$Gene)
+
+#get the percentage of cell expression from scRNA-seq
+DEgene_expr <- read.table(paste(ifolder, "expressionFractionsFilt.PSC_GPC.txt", sep = "/"), header = TRUE, sep = "\t")
+DEgene_expr$id <- factor(DEgene_expr$id)
+DEgene_expr$features.plot <- factor(DEgene_expr$features.plot)
+DEgene_expr_sumary <- DEgene_expr %>% group_by(features.plot) %>% dplyr::summarize(RNA_pct_max=max(pct.exp), RNA_exp_max=max(avg.exp))
+colnames(DEgene_expr_sumary) <- c("Gene", "RNA_pct_max", "RNA_exp_max")
+
+#combine log2FC and PCT into one data frame
+ALLgene_plot <- inner_join(ALLgene, DEgene_expr_sumary, by = "Gene")
+
+#keep genes with PCT cutoff of 30%, expression cutoff of 0.3
+ALLgene_plot <- ALLgene_plot[ALLgene_plot$RNA_pct_max > 30 & ALLgene_plot$RNA_exp_max > 0.3, ]
+
+#log2FC cutoff of 0.25
+cutoff=0.25
+
+###
+#write control genes to output for plotting genomic coverage of the three histone marks
+###
+#write out control genes(|log2fc| < 0.25) for plotting genomic coverage of the three histone marks
+out_control <- ALLgene_plot[ALLgene_plot$RNA_Log2FC < cutoff & ALLgene_plot$RNA_Log2FC > (-cutoff), ]
+write.table(out_control[, c("Gene","RNA_Log2FC")], file = paste0(ofolder, "/GPC.vs.PSC.GeneList.filter_PCT0.3_expr0.3_log2FC", cutoff, "_control.txt"), sep = "\t", quote = F, row.names = F, col.names = F)
+
+
+#filter for significantly differential genes (FDR<0.01, |log2fc| > 0.25)
+DEgene_plot <- ALLgene_plot[ALLgene_plot$RNA_FDR<0.01 & (ALLgene_plot$RNA_Log2FC > cutoff | ALLgene_plot$RNA_Log2FC < (-cutoff)),]
+
+###
+#write up and down-regulated genes separately to output for plotting genomic coverage of the three histone marks
+###
+out <- DEgene_plot
+write.table(out[out$RNA_Log2FC > cutoff, c("Gene","RNA_Log2FC")], file = paste0(ofolder, "/GPC.vs.PSC.GeneList.filter_PCT0.3_expr0.3_log2FC", cutoff, "_up.txt"), sep = "\t", quote = F, row.names = F, col.names = F)
+write.table(out[out$RNA_Log2FC < (-cutoff), c("Gene","RNA_Log2FC")], file = paste0(ofolder, "/GPC.vs.PSC.GeneList.filter_PCT0.3_expr0.3_log2FC", cutoff, "_down.txt"), sep = "\t", quote = F, row.names = F, col.names = F)
+
+```
+
+### ###
+### CTd120
+### ###
+
+### read in Bulk CUT&Tag data and combine with RNA expression data together
+```{r}
+
+#folder with chromatin data
+ofolder <- "output/CUT&Tag/DiffBind/"
+itime <- "CTd120"
+  
+###
+#for histone marke K4me3
+###
+mark="K4me3"
+#read in differential peak annotation
+peakAnnot <- read.table(paste0(ofolder, mark, "_", itime, "_diff_peak_annotation_promoter.txt"), header = T, sep = "\t")
+peakAnnot <- peakAnnot[peakAnnot$V7<0.05,]
+
+#keep differential peaks annotated to promoter region
+peakAnnot <- peakAnnot[str_split_fixed(peakAnnot$annotation, " ", 2)[,1]=="Promoter",]
+
+#keep columns of gene name and log2fc
+peakAnnot_plot <- peakAnnot[,c("SYMBOL", "V5")]
+colnames(peakAnnot_plot) <- c("Gene", "HistoneMark_log2FC")
+
+#collapses multiple peaks for the genes by average
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot1 <- peakAnnot_plot_uniq
+colnames(peakAnnot_plot1) <- c("Gene", "K4me3_promoter")
+
+
+###
+#for histone marke K27me3 
+###
+mark="K27me3"
+#read in differential peak annotation
+peakAnnot <- read.table(paste0(ofolder, mark, "_", itime, "_diff_peak_annotation_promoter.txt"), header = T, sep = "\t")
+peakAnnot <- peakAnnot[peakAnnot$V7<0.05,]
+
+#keep differential peaks annotated to promoter region
+peakAnnot <- peakAnnot[str_split_fixed(peakAnnot$annotation, " ", 2)[,1]=="Promoter",]
+
+#keep columns of gene name and log2fc
+peakAnnot_plot <- peakAnnot[,c("SYMBOL", "V5")]
+colnames(peakAnnot_plot) <- c("Gene", "HistoneMark_log2FC")
+
+#collapses multiple peaks for the genes by average
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot2 <- peakAnnot_plot_uniq
+colnames(peakAnnot_plot2) <- c("Gene", "K27me3_promoter")
+
+
+###
+#for histone marke K27ac
+###
+mark="K27ac"
+#read in differential peak annotation
+peakAnnot <- read.table(paste0(ofolder, mark, "_", itime, "_diff_peak_annotation_enhancer.txt"), header = FALSE, sep = "\t")
+peakAnnot <- peakAnnot[peakAnnot$V13<0.05,]
+
+#keep columns of GHid and log2fc
+peakAnnot <- peakAnnot[,c("V4", "V11")]
+colnames(peakAnnot) <- c("GHid", "HistoneMark_log2FC")
+#collapses multiple peaks for the GHid by average 
+peakAnnot_uniq <- peakAnnot %>% group_by(GHid) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+
+#get gene name from enhancer-gene associatoin info from GeneHancer database
+associationGene <- read.table("data_for_import/CUT&Tag/GeneHancer_AnnotSV_gene_association_scores_v5.18_elite.txt", header = F)
+associationGene <- associationGene[,c(1,2)]
+colnames(associationGene) <- c("GHid", "Gene")
+#reference GHid to gene names
+peakAnnot_plot <- inner_join(peakAnnot_uniq, associationGene, by="GHid", relationship = "one-to-many")
+
+#collapses genes with multiple peaks by average
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot4 <- peakAnnot_plot_uniq
+colnames(peakAnnot_plot4) <- c("Gene", "K27ac_enhacner")
+
+#merge histone mark data and RNA expression data together
+peakAnnot_list <- list(DEgene_plot, peakAnnot_plot1, peakAnnot_plot2, peakAnnot_plot4)
+total <- peakAnnot_list %>% purrr::reduce(left_join, by = "Gene") 
+
+total_120 <- total
+
+```
+
+### ###
+### CTd180
+### ###
+
+### read in Bulk CUT&Tag data and combine with RNA expression data together
+```{r}
+
+#folder with chromatin data
+ofolder <- "output/CUT&Tag/DiffBind/"
+itime <- "CTd180"
+  
+###
+#for histone marke K4me3
+###
+mark="K4me3"
+#read in differential peak annotation
+peakAnnot <- read.table(paste0(ofolder, mark, "_", itime, "_diff_peak_annotation_promoter.txt"), header = T, sep = "\t")
+peakAnnot <- peakAnnot[peakAnnot$V7<0.05,]
+
+#keep differential peaks annotated to promoter region
+peakAnnot <- peakAnnot[str_split_fixed(peakAnnot$annotation, " ", 2)[,1]=="Promoter",]
+
+#keep columns of gene name and log2fc
+peakAnnot_plot <- peakAnnot[,c("SYMBOL", "V5")]
+colnames(peakAnnot_plot) <- c("Gene", "HistoneMark_log2FC")
+
+#collapses multiple peaks for the genes by average
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot1 <- peakAnnot_plot_uniq
+colnames(peakAnnot_plot1) <- c("Gene", "K4me3_promoter")
+
+
+###
+#for histone marke K27me3 
+###
+mark="K27me3"
+#read in differential peak annotation
+peakAnnot <- read.table(paste0(ofolder, mark, "_", itime, "_diff_peak_annotation_promoter.txt"), header = T, sep = "\t")
+peakAnnot <- peakAnnot[peakAnnot$V7<0.05,]
+
+#keep differential peaks annotated to promoter region
+peakAnnot <- peakAnnot[str_split_fixed(peakAnnot$annotation, " ", 2)[,1]=="Promoter",]
+
+#keep columns of gene name and log2fc
+peakAnnot_plot <- peakAnnot[,c("SYMBOL", "V5")]
+colnames(peakAnnot_plot) <- c("Gene", "HistoneMark_log2FC")
+
+#collapses multiple peaks for the genes by average
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot2 <- peakAnnot_plot_uniq
+colnames(peakAnnot_plot2) <- c("Gene", "K27me3_promoter")
+
+
+###
+#for histone marke K27ac
+###
+mark="K27ac"
+#read in differential peak annotation
+peakAnnot <- read.table(paste0(ofolder, mark, "_", itime, "_diff_peak_annotation_enhancer.txt"), header = FALSE, sep = "\t")
+peakAnnot <- peakAnnot[peakAnnot$V13<0.05,]
+
+#keep columns of GHid and log2fc
+peakAnnot <- peakAnnot[,c("V4", "V11")]
+colnames(peakAnnot) <- c("GHid", "HistoneMark_log2FC")
+#collapses multiple peaks for the GHid by average 
+peakAnnot_uniq <- peakAnnot %>% group_by(GHid) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+
+#get gene name from enhancer-gene associatoin info from GeneHancer database
+associationGene <- read.table("data_for_import/CUT&Tag/GeneHancer_AnnotSV_gene_association_scores_v5.18_elite.txt", header = F)
+associationGene <- associationGene[,c(1,2)]
+colnames(associationGene) <- c("GHid", "Gene")
+#reference GHid to gene names
+peakAnnot_plot <- inner_join(peakAnnot_uniq, associationGene, by="GHid", relationship = "one-to-many")
+
+#collapses genes with multiple peaks by average
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot4 <- peakAnnot_plot_uniq
+colnames(peakAnnot_plot4) <- c("Gene", "K27ac_enhacner")
+
+#merge histone mark data and RNA expression data together
+peakAnnot_list <- list(DEgene_plot, peakAnnot_plot1, peakAnnot_plot2, peakAnnot_plot4)
+total <- peakAnnot_list %>% purrr::reduce(left_join, by = "Gene") 
+
+total_180 <- total
+
+```
+
+### combine CTd120 and CTd180 data together
+```{r}
+
+#variable to store DIV 120 data
+summary_120 <- total_120
+
+#variable to store DIV 120 data
+summary_180 <- total_180
+
+#combine CTd120 and CTd180 data together
+colnames(total_120) <- c("Gene", "RNA_p-value", "RNA_FDR", "RNA_Log2FC", "RNA_pct_max", "RNA_exp_max", "K4me3_promoter_120", "K27me3_promoter_120", "K27ac_enhacner_120" )
+
+total_180 <- total_180[, c("Gene", "K4me3_promoter", "K27me3_promoter", "K27ac_enhacner")]
+colnames(total_180) <- c("Gene", "K4me3_promoter_180", "K27me3_promoter_180", "K27ac_enhacner_180" )
+
+total_120$Gene
+
+total <- full_join(total_120, total_180, by = "Gene")
+
+```
+
+### filter genes for plotting in heatmap
+```{r}
+
+plot <- total
+
+#log2FC cutoff for heatmap plot
+cutoff=0.6
+
+#filter genes overlap with at least 2 marks
+plot <- plot[(plot$RNA_Log2FC > cutoff | plot$RNA_Log2FC < (-cutoff)),]
+
+#filter genes overlap with at least 2 marks
+plot1 <- plot[(plot$RNA_Log2FC>0 & (plot$K4me3_promoter_120>0 | plot$K4me3_promoter_180>0) & (plot$K27ac_enhacner_120>0 | plot$K27ac_enhacner_180>0)),]
+plot1 <- plot1[!is.na(plot1$Gene),]
+
+plot2 <- plot[(plot$RNA_Log2FC>0 & (plot$K4me3_promoter_120>0 | plot$K4me3_promoter_180>0) & (plot$K27me3_promoter_120<0 | plot$K27me3_promoter_180<0)),]
+plot2 <- plot2[!is.na(plot2$Gene),]
+
+plot3 <- plot[(plot$RNA_Log2FC>0 & (plot$K27ac_enhacner_120>0 | plot$K27ac_enhacner_180>0) & (plot$K27me3_promoter_120<0 | plot$K27me3_promoter_180<0)),]
+plot3 <- plot3[!is.na(plot3$Gene),]
+
+plot4 <- plot[(plot$RNA_Log2FC<0 & (plot$K4me3_promoter_120<0 | plot$K4me3_promoter_180<0) & (plot$K27ac_enhacner_120<0 | plot$K27ac_enhacner_180<0)),]
+plot4 <- plot4[!is.na(plot4$Gene),]
+
+plot5 <- plot[(plot$RNA_Log2FC<0 & (plot$K4me3_promoter_120<0 | plot$K4me3_promoter_180<0) & (plot$K27me3_promoter_120>0 | plot$K27me3_promoter_180>0)),]
+plot5 <- plot5[!is.na(plot5$Gene),]
+
+plot6 <- plot[(plot$RNA_Log2FC<0 & (plot$K27ac_enhacner_120<0 | plot$K27ac_enhacner_180<0) & (plot$K27me3_promote_120r>0 | plot$K27me3_promoter_180>0)),]
+plot6 <- plot6[!is.na(plot6$Gene),]
+
+#combine together
+plotList <- list(plot1, plot2, plot3, plot4, plot5, plot6)
+Toplot <- plotList %>% bind_rows()  %>% unique()
+
+summary(Toplot)
+
+```
+### plot heatmap with both gene expression and chromatin data
+```{r}
+
+plot <- Toplot
+
+plot <- plot %>% arrange(RNA_Log2FC)
+geneOrder <- na.omit(plot$Gene)
+
+plot <- plot[,c("Gene", "RNA_Log2FC", "K4me3_promoter_120", "K27me3_promoter_120", "K27ac_enhacner_120", "K4me3_promoter_180", "K27me3_promoter_180", "K27ac_enhacner_180")]
+plot_long <- pivot_longer(plot, cols = c(RNA_Log2FC, K4me3_promoter_120, K27me3_promoter_120, K27ac_enhacner_120, K4me3_promoter_180, K27me3_promoter_180, K27ac_enhacner_180), names_to = "Type", values_to = "Value") 
+
+plot_long$Type <- factor(plot_long$Type, levels = c("RNA_Log2FC", "K4me3_promoter_120", "K4me3_promoter_180", "K27ac_enhacner_120", "K27ac_enhacner_180", "K27me3_promoter_120", "K27me3_promoter_180"), labels = c("RNA", "K4me3_CTd120", "K4me3_CTd180", "K27ac_CTd120", "K27ac_CTd180", "K27me3_CTd120" , "K27me3_CTd180"))
+plot_long$Gene <- factor(plot_long$Gene, levels = rev(geneOrder))
+
+i <- length(unique(plot_long$Gene))
+
+write.csv(plot_long, "output/CUT&Tag/plot_long.csv", quote = F, row.names = F)
+
+#plot
+ggplot(plot_long, aes(Gene, Type)) + 
+  geom_tile(aes(fill = Value), color = "black") + 
+  xlab("") +
+  ylab("") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits=c(-3,3), breaks=c(-2,-1,0,1,2), name="log2 fold change", na.value="black", oob = scales::squish) +
+  theme_light() +
+  scale_x_discrete(expand = c(0, 0), guide = guide_axis(angle = 90)) + scale_y_discrete(expand = c(0, 0)) +
+  ggtitle(paste("|log2FC|>", cutoff, " number of genes:", i, sep = ""))
+
+#Save for later reconstruction
+write.csv(plot_long, file = "output/CUT&Tag/plot_long.csv", row.names = F, quote = F)
+
+```
+
+
+### plot CTd120 data by itself
+```{r}
+
+plot <- summary_120
+
+colnames(plot) <- c("Gene", "RNA_p-value", "RNA_FDR", "RNA_Log2FC", "RNA_pct_max", "RNA_exp_max", "K4me3_promoter", "K27me3_promoter", "K27ac_enhacner")
+
+#log2FC cutoff for heatmap plot
+cutoff=0.6
+
+#filter genes overlap with at least 2 marks
+plot <- plot[(plot$RNA_Log2FC > cutoff | plot$RNA_Log2FC < (-cutoff)),]
+plot <- plot[(plot$RNA_Log2FC>0 & plot$K4me3_promoter>0  & plot$K27ac_enhacner>0) | (plot$RNA_Log2FC>0 & plot$K4me3_promoter>0 & plot$K27me3_promoter<0) |(plot$RNA_Log2FC>0 & plot$K27ac_enhacner>0 & plot$K27me3_promoter<0) | (plot$RNA_Log2FC<0 & plot$K4me3_promoter<0 & plot$K27ac_enhacner<0) | (plot$RNA_Log2FC<0 & plot$K4me3_promoter<0 & plot$K27me3_promoter>0) | (plot$RNA_Log2FC<0 & plot$K27ac_enhacner<0 & plot$K27me3_promoter>0),]
+
+plot <- plot[!is.na(plot$Gene),]
+summary(plot)
+
+
+#plot heatmap with both gene expression and chromatin data
+plot <- plot %>% arrange(RNA_Log2FC)
+geneOrder <- na.omit(plot$Gene)
+
+plot <- plot[,c("Gene", "RNA_Log2FC", "K4me3_promoter", "K27me3_promoter", "K27ac_enhacner")]
+plot_long <- pivot_longer(plot, cols = c(RNA_Log2FC, K4me3_promoter, K27me3_promoter, K27ac_enhacner), names_to = "Type", values_to = "Value") 
+
+plot_long$Type <- factor(plot_long$Type, levels = c("RNA_Log2FC", "K4me3_promoter", "K27ac_enhacner", "K27me3_promoter"), labels = c("RNA", "K4me3", "K27ac", "K27me3"))
+plot_long$Gene <- factor(plot_long$Gene, levels = rev(geneOrder))
+
+i <- length(unique(plot_long$Gene))
+
+#ggplot
+ggplot(plot_long, aes(Gene, Type)) + 
+  geom_tile(aes(fill = Value), color = "black") + 
+  xlab("") +
+  ylab("") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits=c(-3,3), breaks=c(-2,-1,0,1,2), name="log2 fold change", na.value="black", oob = scales::squish) +
+  theme_light() +
+  scale_x_discrete(expand = c(0, 0), guide = guide_axis(angle = 90)) + scale_y_discrete(expand = c(0, 0)) +
+  ggtitle(paste("|log2FC|>", cutoff, " number of genes:", i, sep = ""))
+
+
+
+```
+
+### plot CTd180 data by itself
+```{r}
+
+plot <- summary_180
+
+colnames(plot) <- c("Gene", "RNA_p-value", "RNA_FDR", "RNA_Log2FC", "RNA_pct_max", "RNA_exp_max", "K4me3_promoter", "K27me3_promoter", "K27ac_enhacner")
+
+#log2FC cutoff for heatmap plot
+cutoff=0.6
+
+#filter genes overlap with at least 2 marks
+plot <- plot[(plot$RNA_Log2FC > cutoff | plot$RNA_Log2FC < (-cutoff)),]
+plot <- plot[(plot$RNA_Log2FC>0 & plot$K4me3_promoter>0  & plot$K27ac_enhacner>0) | (plot$RNA_Log2FC>0 & plot$K4me3_promoter>0 & plot$K27me3_promoter<0) |(plot$RNA_Log2FC>0 & plot$K27ac_enhacner>0 & plot$K27me3_promoter<0) | (plot$RNA_Log2FC<0 & plot$K4me3_promoter<0 & plot$K27ac_enhacner<0) | (plot$RNA_Log2FC<0 & plot$K4me3_promoter<0 & plot$K27me3_promoter>0) | (plot$RNA_Log2FC<0 & plot$K27ac_enhacner<0 & plot$K27me3_promoter>0),]
+
+plot <- plot[!is.na(plot$Gene),]
+summary(plot)
+
+
+#plot heatmap with both gene expression and chromatin data
+plot <- plot %>% arrange(RNA_Log2FC)
+geneOrder <- na.omit(plot$Gene)
+
+plot <- plot[,c("Gene", "RNA_Log2FC", "K4me3_promoter", "K27me3_promoter", "K27ac_enhacner")]
+plot_long <- pivot_longer(plot, cols = c(RNA_Log2FC, K4me3_promoter, K27me3_promoter, K27ac_enhacner), names_to = "Type", values_to = "Value") 
+
+plot_long$Type <- factor(plot_long$Type, levels = c("RNA_Log2FC", "K4me3_promoter", "K27ac_enhacner", "K27me3_promoter"), labels = c("RNA", "K4me3", "K27ac", "K27me3"))
+plot_long$Gene <- factor(plot_long$Gene, levels = rev(geneOrder))
+
+i <- length(unique(plot_long$Gene))
+
+#ggplot
+ggplot(plot_long, aes(Gene, Type)) + 
+  geom_tile(aes(fill = Value), color = "black") + 
+  xlab("") +
+  ylab("") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits=c(-3,3), breaks=c(-2,-1,0,1,2), name="log2 fold change", na.value="black", oob = scales::squish) +
+  theme_light() +
+  scale_x_discrete(expand = c(0, 0), guide = guide_axis(angle = 90)) + scale_y_discrete(expand = c(0, 0)) +
+  ggtitle(paste("|log2FC|>", cutoff, " number of genes:", i, sep = ""))
+
+## Write out for plotting later
+
+```
+
+
+```{r}
+
+sessionInfo()
+
+```
+

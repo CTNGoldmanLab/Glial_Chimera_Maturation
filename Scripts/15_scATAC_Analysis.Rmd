@@ -1,0 +1,549 @@
+---
+title: "scATAC-seq Analysis of WA09 GPCs"
+author: "John Mariani"
+date: "11/21/2024"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+library(Seurat)
+library(ggplot2)
+library(scPlottingTools)
+library(patchwork)
+library(Signac)
+library(GenomicRanges)
+library(presto)
+library(AnnotationHub)
+library(ggrepel)
+
+```
+
+
+```{r}
+
+source("Scripts/HelperFunctions.R")
+source("Scripts/StyleSettings.R")
+baseSize = 8
+
+
+
+```
+
+
+## Import scATAC data
+```{r}
+
+
+counts <- Read10X_h5(filename = "data_for_import/scATAC/filtered_peak_bc_matrix.h5")
+
+metadata <- read.csv(
+  file = "data_for_import/scATAC/scATACmeta.csv",
+  header = TRUE,
+  row.names = 1
+)
+
+chrom_assay <- CreateChromatinAssay(
+  counts = counts,
+  fragments = "data_for_import/scATAC/fragments.tsv.gz",
+  sep = c(":", "-"),
+  min.cells = 10,
+  min.features = 200
+)
+
+chrom_assay
+
+atac <- CreateSeuratObject(
+  counts = chrom_assay,
+  assay = "peaks",
+  meta.data = metadata
+)
+
+atac
+
+
+```
+## Filter to standard chromosomes
+```{r}
+
+peaks.keep <- seqnames(granges(atac)) %in% standardChromosomes(granges(atac))
+atac <- atac[as.vector(peaks.keep), ]
+
+atac
+
+
+```
+## Annotate to Ensembl 106 to match scRNA
+```{r}
+
+
+ah <- AnnotationHub()
+
+# Search for the Ensembl 106 EnsDb for Homo sapiens on AnnotationHub
+query(ah, "EnsDb.Hsapiens.v106")
+
+
+ensdb_v106 <- ah[["AH100643"]]
+
+
+
+annotations <- GetGRangesFromEnsDb2(ensdb = ensdb_v106)
+
+
+length(unique(annotations$gene_id))
+
+seqlevels(annotations)
+
+humanFeatures <- read.delim("data_for_import/humanFeatures.txt")
+
+annotations$gene_name <- plyr::mapvalues(x = annotations$gene_id, from = humanFeatures$ensembl_gene_id, to = humanFeatures$external_gene_name)
+
+
+# add the gene information to the object
+Annotation(atac) <- annotations
+
+
+
+```
+
+
+## Run scATAC QC
+```{r}
+
+
+atac <- NucleosomeSignal(object = atac)
+
+# compute TSS enrichment score per cell
+atac <- TSSEnrichment(object = atac, )
+
+# add fraction of reads in peaks
+atac$pct_reads_in_peaks <- atac$peak_region_fragments / atac$passed_filters * 100
+
+seqlevels(blacklist_hg38_unified) <- gsub(x = seqlevels(blacklist_hg38_unified), pattern = "chr", replacement = "")
+
+# add blacklist ratio
+atac$blacklist_ratio <- FractionCountsInRegion(
+  object = atac, 
+  assay = 'peaks',
+  regions = blacklist_hg38_unified
+)
+
+
+DensityScatter(atac, x = 'nCount_peaks', y = 'TSS.enrichment', log_x = TRUE, quantiles = TRUE)
+
+
+```
+
+
+
+```{r}
+
+atac$nucleosome_group <- ifelse(atac$nucleosome_signal > 4, 'NS > 4', 'NS < 4')
+
+table(atac$nucleosome_group)
+## All nucleosome signals below 4
+#FragmentHistogram(object = atac, group.by = 'nucleosome_group')
+
+```
+
+```{r}
+
+
+VlnPlot(
+  object = atac,
+  features = c('nCount_peaks', 'TSS.enrichment', 'blacklist_ratio', 'nucleosome_signal', 'pct_reads_in_peaks'),
+  pt.size = 0.1,
+  ncol = 5
+)
+
+
+```
+
+```{r}
+
+atac <- subset(
+  x = atac,
+  subset = nCount_peaks > 9000 &
+    nCount_peaks < 100000 &
+    pct_reads_in_peaks > 40 &
+    blacklist_ratio < 0.01 &
+    nucleosome_signal < 4 &
+    TSS.enrichment > 4
+)
+atac
+
+
+```
+
+```{r}
+
+DefaultAssay(atac) <- "peaks"
+
+
+atac <- RunTFIDF(atac)
+atac <- FindTopFeatures(atac, min.cutoff = 'q0')
+atac <- RunSVD(atac)
+
+DepthCor(atac)
+
+
+
+```
+
+
+
+```{r}
+
+atac <- RunUMAP(object = atac, reduction = 'lsi', dims = 2:30, min.dist = .9)
+atac <- FindNeighbors(object = atac, reduction = 'lsi', dims = 2:30)
+atac <- FindClusters(object = atac, verbose = FALSE, algorithm = 3)
+DimPlot(object = atac, label = TRUE) + NoLegend()
+
+
+
+
+
+
+
+```
+## Import invitro scRNA to compare to
+```{r}
+
+invitro <- readRDS("output/RDS/invitroInvivo.rds")
+
+invitro <- subset(invitro, subset = stage == "In Vitro - GPC Stage")
+invitro <- UpdateSeuratObject(invitro)
+
+DefaultAssay(invitro)
+
+invitro <- NormalizeData(invitro)
+
+```
+
+
+```{r}
+
+DefaultAssay(atac) <- "peaks"
+
+gene.activities <- GeneActivity(atac, verbose = T, features = unique(Annotation(atac)$gene_name), max.width = NULL, biotypes = NULL)
+
+
+atac[['RNA']] <- CreateAssayObject(counts = gene.activities)
+
+head(row.names(gene.activities))
+
+row.names(gene.activities)[duplicated(row.names(gene.activities))]
+
+atac <- NormalizeData(
+  object = atac,
+  assay = 'RNA',
+  normalization.method = 'LogNormalize',
+  scale.factor = median(atac$nCount_RNA)
+)
+
+DefaultAssay(atac) <- "RNA"
+
+```
+
+
+## Import invitro differential subpopulation enrichment
+```{r}
+
+table(invitro$cellType)
+
+invitroComparisons <- c("GPC4.vs.Rest", "NPC.vs.Rest", "GPC1.vs.Rest", "GPC2.vs.Rest", "GPC3.vs.Rest")
+
+for(i in invitroComparisons){
+  temp <- read.delim(paste0("output/DE/",i,".txt"))
+  #temp <- assign(i, read.delim(paste0("output/DE/",i,".txt")))
+  print(dim(temp))
+  temp$comparison <- i
+  temp <- temp[order(temp$logFC, decreasing = T),]
+  assign(i, temp)
+  assign(paste0(i,".sig"), temp[temp$FDR < 0.01 & abs(temp$logFC) > .25,])
+}
+
+invitroAnchors <- rbindlist(list(GPC1.vs.Rest.sig, GPC2.vs.Rest.sig, GPC3.vs.Rest.sig, GPC4.vs.Rest.sig, NPC.vs.Rest.sig))
+invitroAnchors <- unique(invitroAnchors$gene)
+
+
+
+```
+
+
+
+## Transfer subpopulation labels from in vitro scRNA-seq to scATAC-seq dataset
+```{r}
+
+transfer.anchors <- FindTransferAnchors(
+  reference = invitro,
+  query = atac,
+  reduction = 'cca',
+  features = invitroAnchors
+)
+
+table(invitro$cellType)
+
+predicted.labels <- TransferData(
+  anchorset = transfer.anchors,
+  refdata = invitro$cellType,
+  weight.reduction = atac[['lsi']],
+  dims = 2:30
+)
+
+table(predicted.labels$predicted.id)
+
+
+atac <- AddMetaData(object = atac, metadata = predicted.labels)
+
+
+VlnPlot(atac, "JAG1", group.by = "predicted.id", pt.size = 0) 
+
+
+Idents(atac) <- atac$predicted.id
+
+DimPlotCustom(atac, group.by = "predicted.id", label = T)
+
+
+
+```
+
+## Use presto FindAllMarkers to calculate subpopulation gene activity enrichment
+```{r}
+
+
+DefaultAssay(atac) <- 'RNA'
+
+prestoResultsGene <- wilcoxauc(atac, seurat_assay = "RNA")
+prestoResultsGene <- prestoResultsGene[order(prestoResultsGene$logFC, decreasing = T),]
+
+write.table(prestoResultsGene, "output/DE/scATAC_gene_activity_all.txt", sep = "\t", quote = F, row.names = F)
+
+
+prestoResultsGene.filt <- prestoResultsGene[prestoResultsGene$padj < 0.01,]
+prestoResultsGene.filt <- prestoResultsGene.filt[prestoResultsGene.filt$group != "imOL",]
+
+write.table(prestoResultsGene.filt, "output/DE/scATAC_gene_activity_de.txt", sep = "\t", quote = F, row.names = F)
+
+
+```
+
+
+```{r}
+
+NPCs <- prestoResultsGene.filt[prestoResultsGene.filt$group == "NPC",]
+NPCs <- merge(NPCs, NPC.vs.Rest.sig, by.x = "feature", by.y = "gene")
+
+GPC4s <- prestoResultsGene.filt[prestoResultsGene.filt$group == "GPC4",]
+GPC4s <- merge(GPC4s, GPC4.vs.Rest.sig, by.x = "feature", by.y = "gene")
+
+GPC3s <- prestoResultsGene.filt[prestoResultsGene.filt$group == "GPC3",]
+GPC3s <- merge(GPC3s, GPC3.vs.Rest.sig, by.x = "feature", by.y = "gene")
+
+GPC2s <- prestoResultsGene.filt[prestoResultsGene.filt$group == "GPC2",]
+GPC2s <- merge(GPC2s, GPC2.vs.Rest.sig, by.x = "feature", by.y = "gene")
+
+GPC1s <- prestoResultsGene.filt[prestoResultsGene.filt$group == "GPC1",]
+GPC1s <- merge(GPC1s, GPC1.vs.Rest.sig, by.x = "feature", by.y = "gene")
+
+allMerged <- rbindlist(list(NPCs, GPC1s, GPC2s, GPC3s, GPC4s))
+
+allMerged <- allMerged[allMerged$logFC.x * allMerged$logFC.y > 0,]
+
+allMerged <- allMerged[order(allMerged$logFC.x, decreasing = T),]
+
+
+howMany <- 11
+
+topHowMany <- allMerged[allMerged$group == "GPC4",]$feature[1:howMany]
+topHowMany <- c(topHowMany, allMerged[allMerged$group == "GPC3" & allMerged$feature %not in% topHowMany & allMerged$feature != "ENSG00000289413",]$feature[1:howMany])
+topHowMany <- c(topHowMany, allMerged[allMerged$group == "GPC2" & allMerged$feature %not in% topHowMany,]$feature[1:howMany])
+topHowMany <- c(topHowMany, allMerged[allMerged$group == "GPC1" & allMerged$feature %not in% topHowMany & allMerged$feature != "ENSG00000289413",]$feature[1:howMany])
+topHowMany <- c(topHowMany, allMerged[allMerged$group == "NPC" & allMerged$feature %not in% topHowMany,]$feature[1:howMany])
+
+allATAC <- prestoResultsGene[prestoResultsGene$feature %in% topHowMany & prestoResultsGene$group != "imOL",]
+allATAC$group <- factor(allATAC$group, levels = rev(c("NPC", "GPC1", "GPC2", "GPC3","GPC4")))
+allATAC$feature <- factor(allATAC$feature, levels = rev(topHowMany))
+
+allATAC$sig <- symnum(allATAC$padj, cutpoints = c(0, 0.00001,
+    0.0001, 0.001, 0.01, 1), symbols = c("****","***", "**", "*"," "))
+
+
+geneActivityHMFigATAC <- ggplot(allATAC, aes(y = group, x = feature, fill = logFC)) + 
+  geom_tile(colour = "black") + 
+  scale_fill_gradient2(low = "magenta4", mid = "white", high = "darkorange", midpoint = 0) + 
+  scale_y_discrete(expand = c(0,0)) +
+  theme_bw() + 
+  theme_manuscript() + 
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = .5, vjust = .5), legend.key.height = unit(.2, "inch")) + 
+  geom_text(aes(label = sig), angle = 90, vjust = .75, size = 2) + 
+  guides(fill=guide_colorbar(title="Log2FC Gene Activity Enrichment", title.position = "left", title.theme = element_text(angle = 90, hjust = .5, size = 8))) +
+  labs(tag = "A")
+
+geneActivityHMFigATAC
+
+
+
+allDE <- rbindlist(list(GPC4.vs.Rest, GPC3.vs.Rest, GPC2.vs.Rest, GPC1.vs.Rest, NPC.vs.Rest))
+allDE <- allDE[allDE$gene %in% topHowMany,]
+allDE$comparison <- gsub(x = allDE$comparison, pattern = ".vs.Rest", replacement = "")
+allDE$comparison <- factor(allDE$comparison, levels = rev(c("NPC", "GPC1", "GPC2", "GPC3","GPC4")))
+allDE$gene <- factor(allDE$gene, levels = rev(topHowMany))
+
+allDE$sig <- symnum(allDE$FDR, c(0, 0.00001,
+    0.0001, 0.001, 0.01, 1), symbols = c("****","***", "**", "*"," "))
+
+allDE$sig <- ifelse(abs(allDE$logFC) < .25, " ", allDE$sig)
+
+expressionHMFigATAC <- ggplot(allDE, aes(y = comparison, x = gene, fill = logFC)) + 
+  geom_tile(colour = "black") + 
+  scale_fill_gradient2(low = "dodgerblue2", mid = "white", high = "red2", midpoint = 0) + 
+  scale_y_discrete(expand = c(0,0)) +theme_bw() + 
+  scale_x_discrete(position = "top") +
+  theme_manuscript() + 
+  theme(axis.title = element_blank(), axis.text.x = element_blank(), legend.key.height = unit(.2, "inch"),
+        axis.ticks.x.top = element_line(), legend.title = element_text(size = 8)) + 
+  geom_text(aes(label = sig), angle = 90, vjust = .75, size = 2) + 
+  guides(fill=guide_colorbar(title="Log2FC Gene Enrichment", title.position = "left", title.theme = element_text(angle = 90, hjust = .5, size = 8))) +
+  labs(tag = "B")
+
+expressionHMFigATAC
+
+geneActivityHMFigATAC / expressionHMFigATAC
+
+```
+
+
+
+```{r}
+
+GPC4.scatter <- prestoResultsGene[prestoResultsGene$group == "GPC4",]
+
+
+GPC4.scatter <- merge(GPC4.scatter, GPC4.vs.Rest, by.x = "feature", by.y = "gene")
+GPC4.scatter <- GPC4.scatter[complete.cases(GPC4.scatter),]
+
+GPC.scatter.both.sig <- GPC4.scatter[GPC4.scatter$FDR < 0.01 & abs(GPC4.scatter$logFC.y) > 0.25 & GPC4.scatter$padj < 0.01,]
+
+table(GPC.scatter.both.sig$logFC.x * GPC.scatter.both.sig$logFC.y > 0)
+
+GPC.scatter.onlyGene.sig <- GPC4.scatter[GPC4.scatter$FDR < 0.01 & abs(GPC4.scatter$logFC.y) > 0.25 & GPC4.scatter$padj > 0.01,]
+GPC.scatter.onlyATAC.sig <- GPC4.scatter[GPC4.scatter$padj < 0.01 & GPC4.scatter$feature %not in% GPC4.vs.Rest.sig$gene,]
+
+nrow(GPC.scatter.both.sig)
+nrow(GPC.scatter.onlyGene.sig)
+nrow(GPC.scatter.onlyATAC.sig)
+
+
+GPC.scatter.Gene.sig <- GPC4.scatter[GPC4.scatter$FDR < 0.01 & abs(GPC4.scatter$logFC.y) > 0.25,]
+
+GPC4.scatter$group <- ifelse(GPC4.scatter$feature %in% GPC.scatter.both.sig$feature, "Both", 
+                             ifelse(GPC4.scatter$feature %in% GPC.scatter.onlyGene.sig$feature, "Gene only",
+                             "Gene Activity only"))
+
+GPC4.scatter$group <- factor(GPC4.scatter$group, levels = (c("Gene Activity only", "Gene only", "Both")))
+GPC4.scatter <- GPC4.scatter[order(GPC4.scatter$group),]
+
+GPC4.scatter$label <- ""
+GPC4.scatter$label <- ifelse(abs(GPC4.scatter$logFC.y) > 0.5 | abs(GPC4.scatter$logFC.x) > 0.5, GPC4.scatter$feature, GPC4.scatter$label)
+GPC4.scatter$label <- ifelse(GPC4.scatter$label %in% GPC4.scatter[grepl(x = GPC4.scatter$feature, pattern = "ENSG"),]$feature, "", GPC4.scatter$label)
+
+
+GPC4.consesus.scatter.Fig<- ggplot(GPC4.scatter, aes(x = logFC.y, y = logFC.x, fill = group)) + 
+  geom_point(shape = 21, colour = "black") + 
+  theme_manuscript() + 
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  geom_text_repel(aes(label = label), max.overlaps = 100) + 
+  labs(x = "GPC4 Enrichment Gene Expression Log2FC", y= "GPC4 Enrichment Gene Activity Log2FC") + 
+  theme(legend.position  = c(0.8, 0.2))
+
+
+GPC4.consesus.scatter.Fig
+
+```
+
+
+
+```{r}
+
+DefaultAssay(atac) <- 'peaks'
+
+prestoResultsPeaks <- wilcoxauc(atac, seurat_assay = "peaks")
+
+closestFeatures <- ClosestFeature(atac, regions = prestoResultsPeaks$feature)
+
+prestoResultsPeaks <- merge(prestoResultsPeaks, closestFeatures, by.x = 1, by.y = 7)
+
+prestoResultsPeaks <- prestoResultsPeaks[!duplicated(prestoResultsPeaks),]
+
+prestoResultsPeaks <- prestoResultsPeaks[order(prestoResultsPeaks$logFC, decreasing = T),]
+
+prestoResultsPeaks.sig <- prestoResultsPeaks[prestoResultsPeaks$padj < 0.01 & prestoResultsPeaks$group != "imOL",]
+
+write.table(prestoResultsPeaks.sig, "output/DE/scATAC_peaks_de.txt", sep = "\t", quote = F, row.names = F)
+
+
+
+
+
+```
+
+
+
+
+```{r}
+
+saveRDS(atac, "output/RDS/atac.rds")
+atac.filt <- subset(atac, subset = predicted.id != "imOL")
+
+Idents(atac.filt) <- factor(Idents(atac.filt), levels = c("NPC", "GPC1", "GPC2", "GPC3", "GPC4"))
+
+covPlotFig <- CoveragePlot(
+  object = atac.filt,
+  region = c("NKX2-2", "OLIG1"),
+  #region.highlight = regions_highlight,
+  extend.upstream = 1000,
+  extend.downstream = 1000,
+  peaks = F,
+  ncol = 1
+) & scale_fill_manual(values = manuscriptPalette)
+
+covPlotFig 
+
+atacDimPlot <- DimPlotCustom(atac, group.by = "predicted.id", label = T) + scale_fill_manual(values = manuscriptPalette) + theme_manuscript() + theme(legend.position  = c(0.8, 0.2))
+atacDimPlot
+
+atacDimPlot | covPlotFig
+
+
+ggsave("output/Figures/scATAC/tempCov.pdf", width = 8.5, height = 3.5, units = "in")
+
+
+```
+
+```{r}
+
+(geneActivityHMFigATAC / expressionHMFigATAC / plot_spacer() / free(GPC4.consesus.scatter.Fig, type = "panel")) + plot_layout(heights = c(.3,.3,1,1.6))
+
+ggsave(filename = "output/Figures/scATAC/scATAC.pdf", width = 8.5, height = 11, units = "in")
+
+
+
+
+```
+
+
+```{r}
+
+
+
+sessionInfo()
+
+```

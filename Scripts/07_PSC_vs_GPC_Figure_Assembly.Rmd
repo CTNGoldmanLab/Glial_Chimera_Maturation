@@ -1,0 +1,208 @@
+---
+title: "PSC vs GPC Figure Assembly"
+author: "John Mariani"
+date: "12/6/2023"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+library(Seurat)
+library(tidyr)
+library(MAST)
+library(ggplot2)
+library(scPlottingTools)
+library(patchwork)
+library(ggrastr)
+
+
+source("Scripts/HelperFunctions.R")
+source("Scripts/StyleSettings.R")
+
+
+```
+
+
+# Load In Vivo Data
+
+```{r}
+
+mergedH <- readRDS("output/RDS/mergedH.rds")
+
+table(mergedH$stage)
+
+# Only use v3.1 for this analysis
+GPC_PSC <- subset(mergedH, subset = stage != "In Vivo")
+GPC_PSC <- subset(GPC_PSC, subset = chemistry == "v3.1")
+
+table(GPC_PSC$stage)
+
+
+DefaultAssay(GPC_PSC) <- "RNA"
+GPC_PSC <- NormalizeData(GPC_PSC)
+
+
+```
+
+### Import scvi embeddings and leiden clusters
+```{r}
+
+embeddings <- read.csv("output/scVI/Pluripotent_GPC_umapEmbeddings.csv", header = F)
+
+names(embeddings) <- c("UMAP_1", "UMAP_2")
+row.names(embeddings) <- Cells(GPC_PSC)
+
+GPC_PSC[['umap']] <- CreateDimReducObject(embeddings = as.matrix(embeddings), key = "UMAP_", assay = "RNA")
+DimPlot(GPC_PSC, reduction = "umap", split.by = "line") + NoLegend()
+
+leidenClusters <- read.csv("output/scVI/Pluripotent_GPC_leiden.csv")
+GPC_PSC$leidenClusters <- leidenClusters$leiden_scVI
+
+
+
+```
+
+### Make descriptive plots
+```{r}
+
+GPC_PSC$stageDim <- ifelse(GPC_PSC$stage == "In Vitro - Pluripotent Stem Cell Stage", "In Vitro - PSC Stage", "In Vitro - GPC Stage")
+GPC_PSC$lineDim <- ifelse(GPC_PSC$line == "C27", "iPSC (C27)", "WA09 - (ESC)")
+
+
+Fig1B <- DimPlotCustom(GPC_PSC, group.by = "stageDim", label = T, label.size = labelSize) + 
+  theme_manuscript() + 
+  scale_fill_manual(values = manuscriptPalette) + 
+  labs(tag = "B") & 
+  NoLegend() & 
+  ggtitle("Integrated In Vitro PSC & GPC Stages")
+Fig1B
+
+
+
+Fig1C <- DimPlotCustom(GPC_PSC, group.by = "stageDim", split.by = "stageDim", ncol = 1) & 
+  theme_manuscript() & 
+  scale_fill_manual(values = manuscriptPalette) & 
+  NoLegend() & 
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank())
+
+Fig1C[[1]] <- Fig1C[[1]] + labs(tag = "C") + theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+
+Fig1C
+
+Fig1D <- DimPlotCustom(GPC_PSC, split.by = "lineDim", group.by = "stageDim", ncol = 1) & 
+  theme_manuscript() & 
+  scale_fill_manual(values = manuscriptPalette) & 
+  NoLegend() & 
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank()) 
+Fig1D[[1]] <- Fig1D[[1]] + labs(tag = "D") + theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+Fig1D
+
+
+top <- (plot_spacer() | Fig1B | Fig1C | Fig1D) + plot_layout(widths = c(1, 1,.5,.5))
+top
+
+```
+
+## Make Middle
+```{r}
+
+### Feature Plots
+Fig1E <- FeaturePlotCustom(GPC_PSC, genes = c("LIN28A", "POU5F1")) & 
+  theme_manuscript() &
+  theme(legend.position= "bottom")
+
+Fig1E[[1]] <- Fig1E[[1]] + labs(tag = "E") 
+Fig1E[[2]] <- Fig1E[[2]] + theme(legend.position = "none")
+
+Fig1E
+
+
+### Coexpression Plots
+scatterData <- FetchData(GPC_PSC, c("LIN28A", "POU5F1"), slot = "counts")
+scatterData <- merge(scatterData, GPC_PSC@meta.data, by.x = 0, by.y = "cellName")
+
+prop.table(table(scatterData[scatterData$stageDim == "In Vitro - PSC Stage",]$LIN28A > 0, scatterData[scatterData$stageDim == "In Vitro - PSC Stage",]$POU5F1 > 0)) * 100
+
+Fig1F_PSC <- ggplot(scatterData[scatterData$stageDim == "In Vitro - PSC Stage",], aes(x = LIN28A, y = POU5F1)) + 
+  #ggrastr::rasterise(ggplot2::geom_point(fill = "mediumseagreen", size = 1, colour = "black", stroke = .1, shape = 21)) +
+  ggrastr::rasterise(ggplot2::geom_point(colour = "mediumseagreen", size = 1), dpi = 600) +
+  theme_manuscript() + 
+  xlim(0,max(scatterData$LIN28A)) + 
+  ylim(0, max(scatterData$POU5F1)) + 
+  ggtitle("PSC Stage") + 
+  labs(tag = "F") + 
+  annotation_custom(grob = grid::textGrob("99.3% Co-expression", x = unit(1, "npc"), rot = 270, gp = grid::gpar(fontsize = baseSize * axisTitleSize)))
+Fig1F_PSC
+
+
+
+prop.table(table(scatterData[scatterData$stageDim == "In Vitro - GPC Stage",]$LIN28A > 0, scatterData[scatterData$stageDim == "In Vitro - GPC Stage",]$POU5F1 > 0)) * 100
+
+Fig1F_GPC <- ggplot(scatterData[scatterData$stageDim == "In Vitro - GPC Stage",], aes(x = LIN28A, y = POU5F1)) + 
+  ggrastr::rasterise(ggplot2::geom_point(colour = "#2E30FF", size = 1), dpi = 600) +
+  theme_manuscript() + 
+  xlim(0,max(scatterData$LIN28A)) + 
+  ylim(0, max(scatterData$POU5F1)) + 
+  ggtitle("GPC Stage") + 
+  annotation_custom(grob = grid::textGrob("0% Co-expression", x = unit(1, "npc"), rot = 270, gp = grid::gpar(fontsize = baseSize * axisTitleSize)))
+
+Fig1F_GPC
+
+middle <- (free(Fig1E) | (Fig1F_PSC / Fig1F_GPC) | plot_spacer()) + plot_layout(widths = c(.75,.5,1))
+
+middle
+
+top / middle
+
+
+
+```
+
+## Bottom HM
+```{r}
+
+plot_long <- read.csv("output/CUT&Tag/plot_long.csv")
+
+plot_long$Gene <- factor(plot_long$Gene, levels = unique(plot_long$Gene))
+plot_long$Type <- factor(plot_long$Type, levels = c("RNA", "K4me3_CTd120", "K4me3_CTd180", "K27ac_CTd120", "K27ac_CTd180", "K27me3_CTd120", "K27me3_CTd180"))
+
+bottom <- ggplot(plot_long, aes(Gene, Type)) + 
+  theme_manuscript() +
+  geom_tile(aes(fill = Value), color = "black") + 
+  scale_fill_gradient2(low = "#2E30FF", mid = "white", high = "mediumseagreen", midpoint = 0, limits=c(-3,3), breaks=c(-2,-1,0,1,2), name="log2 fold change", na.value="black", oob = scales::squish, guide = guide_colorbar(barwidth = .5)) +
+  scale_x_discrete(expand = c(0, 0), guide = guide_axis(angle = 90)) + scale_y_discrete(expand = c(0, 0)) +
+  theme(axis.title = element_blank(), legend.title = element_blank())
+
+bottom
+
+```
+
+
+## Assemble Figure
+```{r}
+
+if (!dir.exists("output/Figures/GPC_PSC")) {
+  dir.create("output/Figures/GPC_PSC")
+}
+
+GPC_PSC.fig <- top / middle / free(bottom)
+
+
+
+ggsave(GPC_PSC.fig, filename  = "output/Figures/GPC_PSC/GPC_PSC_fig.pdf", width = 8.5, height = 11, units = "in")
+
+
+
+```
+
+
+```{r}
+
+sessionInfo()
+
+```

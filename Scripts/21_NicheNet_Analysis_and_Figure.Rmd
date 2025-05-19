@@ -1,0 +1,869 @@
+---
+title: "Differential NicheNet Analysis of in vivo and in vitro hGPCs"
+author: "John Mariani"
+date: "3/6/2023"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+```
+
+## Load in Libraries
+
+```{r}
+
+
+
+library(dplyr)
+library(Seurat)
+library(devtools)
+library(patchwork)
+library(dplyr)
+library(SeuratDisk)
+library(biomaRt)
+library(Matrix)
+library(nichenetr)
+library(RColorBrewer)
+library(scPlottingTools)
+library(data.table)
+
+options(future.globals.maxSize = 16000 * 1024^2)
+
+```
+
+## Read in Human and Mouse Counts
+
+```{r}
+
+source("Scripts/HelperFunctions.r")
+
+dualSpecies <- readRDS("output/RDS/finalNiche.rds")
+
+```
+
+
+## Read in NicheNetV2 Databases
+```{r}
+
+ligand_target_matrix = readRDS("data_for_import/NicheNet/ligand_target_matrix_nsga2r_final.rds")
+lr_network = readRDS("data_for_import/NicheNet/lr_network_human_21122021.rds")
+lr_network = lr_network %>% mutate(bonafide = ! database %in% c("ppi_prediction","ppi_prediction_go"))
+lr_network = lr_network %>% dplyr::rename(ligand = from, receptor = to) %>% distinct(ligand, receptor, bonafide)
+
+weighted_networks = readRDS("data_for_import/NicheNet/weighted_networks_nsga2r_final.rds")
+
+```
+
+## Make counts to edit
+```{r}
+
+dualSpecies$stage2 <- dualSpecies$stage
+dualSpecies$stage2 <- gsub(x = dualSpecies$stage2, pattern = "In Vitro - GPC Stage", replacement = "In Vitro")
+unique(dualSpecies$stage2)
+
+dualSpecies$cellStage <- paste0(dualSpecies$stage2, " ", dualSpecies$cellType)
+dualSpecies$cellStage <- gsub(x = dualSpecies$cellStage, pattern = "Immature Oligodendrocyte", replacement = "imOL")
+dualSpecies$cellStage <- gsub(x = dualSpecies$cellStage, pattern = "Mature Oligodendrocyte", replacement = "maOL")
+
+table(dualSpecies$cellStage)
+
+
+```
+
+## Showing ligand differences between in vitro cell states
+```{r}
+
+ligands <- unique(lr_network$ligand)
+
+GPC1 <- read.delim("output/DE/GPC1.vs.Rest.sig.txt")
+GPC2 <- read.delim("output/DE/GPC2.vs.Rest.sig.txt")
+GPC3 <- read.delim("output/DE/GPC3.vs.Rest.sig.txt")
+GPC4 <- read.delim("output/DE/GPC4.vs.Rest.sig.txt")
+NPC <- read.delim("output/DE/NPC.vs.Rest.sig.txt")
+
+invitroStateMarkers <- rbind(GPC1, GPC2, GPC3, GPC4, NPC)
+invitroStateLigands <- invitroStateMarkers[invitroStateMarkers$gene %in% ligands,]
+invitroStateLigands <- invitroStateLigands[!duplicated(invitroStateLigands$gene),]
+
+
+```
+
+
+
+```{r}
+
+niches = list(
+    "In Vivo" = list(
+      "sender" = c("In Vivo Astrocyte","In Vivo imOL", "In Vivo maOL", "In Vivo Mouse Astrocyte", "In Vivo Mouse Endothelial", "In Vivo Mouse Ependymal", "In Vivo Mouse Macrophage", "In Vivo Mouse GPC", "In Vivo Mouse imOL", "In Vivo Mouse maOL", "In Vivo Mouse Microglia", "In Vivo Mouse NPC", "In Vivo Mouse Pericyte"),
+      "receiver" = c("In Vivo GPC4")),
+    "In Vitro" = list(
+      "sender" = c("In Vitro GPC1","In Vitro GPC2", "In Vitro GPC3", "In Vitro NPC"),
+      "receiver" = c("In Vitro GPC4"))
+  )
+
+
+
+Idents(dualSpecies) <- dualSpecies$cellStage
+
+one2oneGenes <- read.csv("data_for_import/NicheNet/one2oneGenes.csv")
+
+#DE_sender = calculate_niche_de(seurat_obj = dualSpecies %>% subset(features = lr_network$ligand %>% intersect(one2oneGenes$x)), niches = niches, type = "sender", assay_oi = "RNA") # only ligands important for sender cell types
+
+
+#write.csv(DE_sender, "output/NicheNet/DE_sender.csv", quote = F, row.names = F)
+
+DE_sender <- read.csv("output/NicheNet/DE_sender.csv")
+DE_sender$sender <- gsub(x = DE_sender$sender, pattern = "Immature Oligodendrocyte", replacement = "imOL")
+DE_sender$sender_other_niche <- gsub(x = DE_sender$sender_other_niche, pattern = "Immature Oligodendrocyte", replacement = "imOL")
+DE_sender$sender <- gsub(x = DE_sender$sender, pattern = "Mature Oligodendrocyte", replacement = "maOL")
+DE_sender$sender_other_niche <- gsub(x = DE_sender$sender_other_niche, pattern = "Mature Oligodendrocyte", replacement = "maOL")
+DE_sender$sender <- gsub(x = DE_sender$sender, pattern = "Immature Oligo", replacement = "imOL")
+DE_sender$sender_other_niche <- gsub(x = DE_sender$sender_other_niche, pattern = "Immature Oligo", replacement = "imOL")
+DE_sender$sender <- gsub(x = DE_sender$sender, pattern = "Mature Oligo", replacement = "maOL")
+DE_sender$sender_other_niche <- gsub(x = DE_sender$sender_other_niche, pattern = "Mature Oligo", replacement = "maOL")
+
+
+deGPC4 <- read.delim("output/DE/Invivo.vs.Invitro.GPC4.txt")
+deGPC4.sig <- read.delim("output/DE/Invivo.vs.Invitro.GPC4.sig.txt")
+deGPC4 <- deGPC4[complete.cases(deGPC4),]
+deGPC4 <- rbind(deGPC4, deGPC4.sig[deGPC4.sig$gene %not in% deGPC4$gene,])
+
+#Format Prior Differential Expression for receiver cells
+
+pct.expr <- DotPlot(dualSpecies, features = deGPC4$gene, idents = c("In Vivo GPC4", "In Vitro GPC4"), group.by = "cellStage")$data
+pct.expr.invivo <- pct.expr[pct.expr$id == "In Vivo GPC4",]
+pct.expr.invitro <- pct.expr[pct.expr$id == "In Vitro GPC4",]
+
+
+DE_receiver_invivo <- data.frame(gene = deGPC4$gene, p_val = deGPC4$FDR, avg_log2FC = deGPC4$logFC, pct.1 = pct.expr.invivo$pct.exp, pct.2 = pct.expr.invitro$pct.exp, p_val_adj = deGPC4$FDR, receiver = "In Vivo GPC4", receiver_other_niche = "In Vitro GPC4")
+
+DE_receiver_invitro <- data.frame(gene = deGPC4$gene, p_val = deGPC4$FDR, avg_log2FC = (deGPC4$logFC*-1), pct.1 = pct.expr.invitro$pct.exp, pct.2 = pct.expr.invivo$pct.exp, p_val_adj = deGPC4$FDR, receiver = "In Vitro GPC4", receiver_other_niche = "In Vivo GPC4")
+
+
+DE_receiver <- rbind(DE_receiver_invivo, DE_receiver_invitro)
+
+
+DE_receiver_receptors <- DE_receiver[DE_receiver$gene %in% lr_network$receptor,]
+
+#DE_receiver = calculate_niche_de(seurat_obj = dualSpecies %>% subset(features = lr_network$receptor %>% unique()), niches = niches, type = "receiver", assay_oi = "RNA") # only receptors now, later on: DE analysis to find targets
+
+DE_sender = DE_sender %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
+
+DE_receiver_receptors = DE_receiver_receptors %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
+
+
+
+
+```
+
+```{r}
+
+expression_pct = 10
+DE_sender_processed = process_niche_de(DE_table = DE_sender, niches = niches, expression_pct = expression_pct, type = "sender")
+DE_receiver_processed = process_niche_de(DE_table = DE_receiver_receptors, niches = niches, expression_pct = expression_pct, type = "receiver")
+
+specificity_score_LR_pairs = "min_lfc"
+DE_sender_receiver = combine_sender_receiver_de(DE_sender_processed, DE_receiver_processed, lr_network, specificity_score = specificity_score_LR_pairs)
+
+
+
+```
+
+
+```{r}
+
+lfc_cutoff = 0.25 # recommended for 10x as min_lfc cutoff. 
+specificity_score_targets = "min_lfc"
+
+#DE_receiver_targets = calculate_niche_de_targets(seurat_obj = dualSpecies, niches = niches, lfc_cutoff = lfc_cutoff, expression_pct = expression_pct, assay_oi = "RNA") 
+
+DE_receiver_processed_targets = process_receiver_target_de(DE_receiver = DE_receiver, niches = niches, expression_pct = expression_pct, specificity_score = specificity_score_targets)
+  
+background = DE_receiver_processed_targets  %>% pull(target) %>% unique()
+
+geneset_InVivo = DE_receiver_processed_targets %>% filter(receiver == niches$`In Vivo`$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
+
+
+geneset_Invitro = DE_receiver_processed_targets %>% filter(receiver == niches$`In Vitro`$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
+
+geneset_InVivo %>% setdiff(rownames(ligand_target_matrix))
+geneset_Invitro %>% setdiff(rownames(ligand_target_matrix))
+
+
+
+```
+
+```{r}
+
+top_n_target = 1000
+
+niche_geneset_list = list(
+    "In_Vivo_niche" = list(
+      "receiver" = "In Vivo GPC4",
+      "geneset" = geneset_InVivo,
+      "background" = background),
+    "In_Vitro_niche" = list(
+      "receiver" = "In Vitro GPC4",
+      "geneset" = geneset_Invitro ,
+      "background" = background))
+
+ligand_activities_targets = get_ligand_activities_targets(niche_geneset_list = niche_geneset_list, ligand_target_matrix = ligand_target_matrix, top_n_target = top_n_target)
+
+write.table(ligand_activities_targets, "output/NicheNet/ligand_activities_targets.txt", sep = "\t", row.names = F, quote = F)
+
+
+```
+
+```{r}
+
+features_oi = union(lr_network$ligand, lr_network$receptor) %>% union(ligand_activities_targets$target) %>% setdiff(NA)
+  
+dotplot = suppressWarnings(Seurat::DotPlot(dualSpecies %>% subset(idents = niches %>% unlist() %>% unique()), features = features_oi, assay = "RNA"))
+
+exprs_tbl = dotplot$data %>% as_tibble()
+exprs_tbl = exprs_tbl %>% dplyr::rename(celltype = id, gene = features.plot, expression = avg.exp, expression_scaled = avg.exp.scaled, fraction = pct.exp) %>%
+    mutate(fraction = fraction/100) %>% as_tibble() %>% dplyr::select(celltype, gene, expression, expression_scaled, fraction) %>% distinct() %>% arrange(gene) %>% mutate(gene = as.character(gene))
+  
+exprs_tbl_ligand = exprs_tbl %>% filter(gene %in% lr_network$ligand) %>% dplyr::rename(sender = celltype, ligand = gene, ligand_expression = expression, ligand_expression_scaled = expression_scaled, ligand_fraction = fraction) 
+
+exprs_tbl_receptor = exprs_tbl %>% filter(gene %in% lr_network$receptor) %>% dplyr::rename(receiver = celltype, receptor = gene, receptor_expression = expression, receptor_expression_scaled = expression_scaled, receptor_fraction = fraction)
+
+exprs_tbl_target = exprs_tbl %>% filter(gene %in% ligand_activities_targets$target) %>% dplyr::rename(receiver = celltype, target = gene, target_expression = expression, target_expression_scaled = expression_scaled, target_fraction = fraction)
+
+exprs_tbl_ligand = exprs_tbl_ligand %>%  mutate(scaled_ligand_expression_scaled = scale_quantile_adapted(ligand_expression_scaled)) %>% mutate(ligand_fraction_adapted = ligand_fraction) %>% mutate_cond(ligand_fraction >= expression_pct, ligand_fraction_adapted = expression_pct)  %>% mutate(scaled_ligand_fraction_adapted = scale_quantile_adapted(ligand_fraction_adapted))
+
+exprs_tbl_receptor = exprs_tbl_receptor %>% mutate(scaled_receptor_expression_scaled = scale_quantile_adapted(receptor_expression_scaled))  %>% mutate(receptor_fraction_adapted = receptor_fraction) %>% mutate_cond(receptor_fraction >= expression_pct, receptor_fraction_adapted = expression_pct)  %>% mutate(scaled_receptor_fraction_adapted = scale_quantile_adapted(receptor_fraction_adapted))
+
+```
+
+
+```{r}
+
+exprs_sender_receiver = lr_network %>% 
+  inner_join(exprs_tbl_ligand, by = c("ligand")) %>% 
+  inner_join(exprs_tbl_receptor, by = c("receptor")) %>% inner_join(DE_sender_receiver %>% distinct(niche, sender, receiver))
+  
+ligand_scaled_receptor_expression_fraction_df = exprs_sender_receiver %>% group_by(ligand, receiver) %>% mutate(rank_receptor_expression = dense_rank(receptor_expression), rank_receptor_fraction  = dense_rank(receptor_fraction)) %>% mutate(ligand_scaled_receptor_expression_fraction = 0.5*( (rank_receptor_fraction / max(rank_receptor_fraction)) + ((rank_receptor_expression / max(rank_receptor_expression))) ) )  %>% distinct(ligand, receptor, receiver, ligand_scaled_receptor_expression_fraction, bonafide) %>% distinct() %>% ungroup() 
+
+# No Spatial info
+spatial_info = tibble(celltype_region_oi = NA, celltype_other_region = NA) %>% mutate(niche =  niches %>% names() %>% head(1), celltype_type = "sender")
+
+
+```
+
+## No Spaital info
+```{r}
+
+
+include_spatial_info_sender = F # if not spatial info to include: put this to false 
+include_spatial_info_receiver = FALSE # if spatial info to include: put this to true 
+
+
+if(include_spatial_info_sender == FALSE & include_spatial_info_receiver == FALSE){
+    spatial_info = tibble(celltype_region_oi = NA, celltype_other_region = NA) %>% mutate(niche =  niches %>% names() %>% head(1), celltype_type = "sender")
+} 
+
+
+if(include_spatial_info_sender == TRUE){
+  sender_spatial_DE = calculate_spatial_DE(seurat_obj = seurat_obj %>% subset(features = lr_network$ligand %>% unique()), spatial_info = spatial_info %>% filter(celltype_type == "sender"), assay_oi = assay_oi)
+  sender_spatial_DE_processed = process_spatial_de(DE_table = sender_spatial_DE, type = "sender", lr_network = lr_network, expression_pct = expression_pct, specificity_score = specificity_score_spatial)
+
+  # add a neutral spatial score for sender celltypes in which the spatial is not known / not of importance
+  sender_spatial_DE_others = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "sender", lr_network = lr_network)
+  sender_spatial_DE_processed = sender_spatial_DE_processed %>% bind_rows(sender_spatial_DE_others)
+
+  sender_spatial_DE_processed = sender_spatial_DE_processed %>% mutate(scaled_ligand_score_spatial = scale_quantile_adapted(ligand_score_spatial))
+
+} else {
+  # # add a neutral spatial score for all sender celltypes (for none of them, spatial is relevant in this case)
+  sender_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "sender", lr_network = lr_network)
+  sender_spatial_DE_processed = sender_spatial_DE_processed %>% mutate(scaled_ligand_score_spatial = scale_quantile_adapted(ligand_score_spatial))  
+
+}
+
+if(include_spatial_info_receiver == TRUE){
+  receiver_spatial_DE = calculate_spatial_DE(seurat_obj = seurat_obj %>% subset(features = lr_network$receptor %>% unique()), spatial_info = spatial_info %>% filter(celltype_type == "receiver"), assay_oi = assay_oi)
+  receiver_spatial_DE_processed = process_spatial_de(DE_table = receiver_spatial_DE, type = "receiver", lr_network = lr_network, expression_pct = expression_pct, specificity_score = specificity_score_spatial)
+
+  # add a neutral spatial score for receiver celltypes in which the spatial is not known / not of importance
+  receiver_spatial_DE_others = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "receiver", lr_network = lr_network)
+  receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% bind_rows(receiver_spatial_DE_others)
+
+  receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% mutate(scaled_receptor_score_spatial = scale_quantile_adapted(receptor_score_spatial))
+
+} else {
+    # # add a neutral spatial score for all receiver celltypes (for none of them, spatial is relevant in this case)
+  receiver_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "receiver", lr_network = lr_network)
+  receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% mutate(scaled_receptor_score_spatial = scale_quantile_adapted(receptor_score_spatial))
+}
+
+
+
+```
+
+
+```{r}
+
+prioritizing_weights = c("scaled_ligand_score" = 5,
+                         "scaled_ligand_expression_scaled" = 1,
+                         "ligand_fraction" = 1,
+                         "scaled_ligand_score_spatial" = 0, 
+                         "scaled_receptor_score" = 0.5,
+                         "scaled_receptor_expression_scaled" = 0.5,
+                          "receptor_fraction" = 1, 
+                         "ligand_scaled_receptor_expression_fraction" = 1,
+                         "scaled_receptor_score_spatial" = 0,
+                         "scaled_activity" = 0,
+                         "scaled_activity_normalized" = 1,
+                         "bona_fide" = 1)
+
+
+output = list(DE_sender_receiver = DE_sender_receiver, ligand_scaled_receptor_expression_fraction_df = ligand_scaled_receptor_expression_fraction_df, sender_spatial_DE_processed = sender_spatial_DE_processed, receiver_spatial_DE_processed = receiver_spatial_DE_processed,
+         ligand_activities_targets = ligand_activities_targets, DE_receiver_processed_targets = DE_receiver_processed_targets, exprs_tbl_ligand = exprs_tbl_ligand,  exprs_tbl_receptor = exprs_tbl_receptor, exprs_tbl_target = exprs_tbl_target)
+
+prioritization_tables = get_prioritization_tables(output, prioritizing_weights)
+
+prioritization_tables$prioritization_tbl_ligand_receptor %>% filter(receiver == niches[[1]]$receiver) %>% head(10)
+prioritization_tables$prioritization_tbl_ligand_receptor %>% filter(receiver == niches[[2]]$receiver) %>% head(10)
+
+
+
+
+prioritization_tables$prioritization_tbl_ligand_receptor = prioritization_tables$prioritization_tbl_ligand_receptor %>% mutate(receiver = factor(receiver, levels = c("In Vivo GPC4", "In Vitro GPC4")), niche = factor(niche, levels = c("In Vivo","In Vitro"))) 
+
+prioritization_tables$prioritization_tbl_ligand_target = prioritization_tables$prioritization_tbl_ligand_target %>% mutate(receiver = factor(receiver, levels = c("In Vivo GPC4", "In Vitro GPC4")), niche = factor(niche, levels = c("In Vivo", "In Vitro"))) 
+
+
+
+```
+
+## Ligand Activities for picking targets
+
+```{r}
+
+
+ligandActivities <- ligand_activities_targets[!duplicated(ligand_activities_targets[c("ligand", "receiver")]),]
+ligandActivities <- ligandActivities[,-c(4:5)]
+
+ligandActivitiesInVivo <- ligandActivities[ligandActivities$receiver == "In Vivo GPC4",]
+ligandActivitiesInVitro <- ligandActivities[ligandActivities$receiver == "In Vitro GPC4",]
+
+ligandActivitiesInVivo <- ligandActivitiesInVivo[,-4]
+ligandActivitiesInVitro <- ligandActivitiesInVitro[,-4]
+
+
+names(ligandActivitiesInVivo)[2:6] <- paste(names(ligandActivitiesInVivo)[2:6], "InVivo", sep = "_")
+names(ligandActivitiesInVitro)[2:6] <- paste(names(ligandActivitiesInVitro)[2:6], "InVitro", sep = "_")
+
+ligandActivities <- merge(ligandActivitiesInVivo, ligandActivitiesInVitro, by.x = 1, by.y = 1)
+ligandActivities <- ligandActivities[,c(1,2,7,3,8,4,9,5,10,6,11)]
+
+ligandActivities$activity_normalized_diff <- ligandActivities$activity_normalized_InVivo - ligandActivities$activity_normalized_InVitro
+ligandActivities$activity_normalized_div <- ligandActivities$activity_normalized_InVivo / ligandActivities$activity_normalized_InVitro
+
+
+# ligandActivities$aupr_corrected_diff <- ligandActivities$aupr_corrected_InVivo - ligandActivities$aupr_corrected_InVitro
+# ligandActivities$aupr_corrected_div <- ligandActivities$aupr_corrected_InVivo / ligandActivities$aupr_corrected_InVitro
+# 
+# ligandActivities$activity_diff <- ligandActivities$activity_InVivo - ligandActivities$activity_InVitro
+# ligandActivities$activity_div <- ligandActivities$activity_InVivo / ligandActivities$activity_InVitro
+# 
+# 
+# ligandActivities$scaled_activity_normalized_diff <- ligandActivities$scaled_activity_normalized_InVivo - ligandActivities$scaled_activity_normalized_InVitro
+# ligandActivities$scaled_activity_normalized_div <- ligandActivities$scaled_activity_normalized_InVivo / ligandActivities$scaled_activity_normalized_InVitro
+
+ligandActivities <- ligandActivities[order(ligandActivities$activity_normalized_diff, decreasing = T),]
+
+pri <- prioritization_tables$prioritization_tbl_ligand_receptor
+
+priInvivo <- pri[pri$niche == "In Vivo",]
+priInvivo <- priInvivo[priInvivo$receptor_fraction > .1,]
+priInvivo <- priInvivo[priInvivo$ligand %in% ligandActivities[ligandActivities$activity_normalized_diff > 0.6,]$ligand,]
+priInvivo <- priInvivo[order(priInvivo$ligand_score, decreasing = T),]
+#priInvivo <- priInvivo[priInvivo$receptor %in% deGPC4[deGPC4$logFC > 0,]$gene,] 
+
+ligandActivitiesInvivoReceptor <- ligandActivities[ligandActivities$ligand %in% priInvivo$ligand,]
+ligandActivitiesInvivoReceptor <- ligandActivitiesInvivoReceptor[ligandActivitiesInvivoReceptor$activity_normalized_diff > 0.6,]
+
+# Differentially regulated in vitro ligands
+ligandActivitiesInvivoReceptor[ligandActivitiesInvivoReceptor$ligand %in% invitroStateLigands$gene,]
+
+
+```
+
+
+## Ligand Activity and Expression for plots
+```{r}
+
+plotting_tbl <- exprs_tbl
+
+plotting_tbl$stage <- ifelse(grepl("Vivo",plotting_tbl$celltype),"In Vivo","In Vitro")
+plotting_tbl$species <- ifelse(grepl("Mouse",plotting_tbl$celltype),"Mouse","Human")
+plotting_tbl$ct <- gsub(pattern = "In Vitro ", replacement = "", plotting_tbl$celltype)
+plotting_tbl$ct <- gsub(pattern = "In Vivo ", replacement = "", plotting_tbl$ct)
+plotting_tbl$ct <- gsub(pattern = "Mouse ", replacement = "", plotting_tbl$ct)
+unique(plotting_tbl$ct)
+
+temp <- unique(plotting_tbl$ct)
+temp
+names(temp) <- c("imOL", "maOL", "Astrocyte", "GPC1", "GPC2", "NPC", "GPC3", "GPC", "Microglia", "Ependymal", "Endothelial", "Pericyte", "Macrophage", "GPC4")
+
+temp
+plotting_tbl$ctRenamed <- plyr::mapvalues(plotting_tbl$ct, from = temp, to = names(temp))
+
+unique(plotting_tbl$ctRenamed)
+
+plotting_tbl$ctRenamed <- factor(plotting_tbl$ctRenamed, levels = c("GPC1", "GPC2", "GPC3", "GPC4", "GPC", "imOL", "maOL", "Astrocyte", "Microglia", "Macrophage", "NPC", "Ependymal", "Endothelial", "Pericyte"))
+
+write.table(plotting_tbl, "output/NicheNet/plotting_tbl.txt", row.names = F, quote = F, sep = "\t")
+
+ligandsCurated <- c("PDGFA", "OSM", "IL1A", "CSF1", "EGF", "TNF", "EBI3", "IL1B", "NOG", "SLITRK1", "TNFSF10", "GHRH", "TGFB1", "GAS6", "ICAM1", "EDN1", "CCN2", "DSCAM", "MMP13", "ADM", "APOE", "OCLN", "HBEGF", "FGF1")
+
+#ligandsCurated <- ligandActivitiesInvivoReceptor$ligand[81:95]
+
+
+
+
+
+# ligandsActivity <- c("SLITRK1", "PDGFA", "OSM", "LRRC4", "IL1A", "IFNK", "EGF", "EBI3", "CSF1", "CMTM8", "CLCF1",
+#                      "TNFSF10", "TNF", "NOG", "GAS6", "DSCAM", "DKK3", "BDNF")
+# 
+# ligandsScore <- c("APOE", "CCN2", "DKK3", "EBI3", "GAS6", "ICAM1", "IL1A", "OCLN", "OSM", "PDGFA", "PGF", "TNFSF10", "FGF1",)
+# 
+# ligandsCurated <- unique(c(ligandsActivity, ligandsScore))
+
+
+
+
+```
+
+```{r}
+
+ligandOrder <- rev(ligandActivities[ligandActivities$ligand %in% ligandsCurated,]$ligand)
+ligandPlot <- plotting_tbl[plotting_tbl$gene %in% ligandsCurated,]
+ligandPlot$gene <- factor(ligandPlot$gene, levels = ligandOrder)
+
+activityPlot <- ligandActivities[ligandActivities$ligand %in% ligandsCurated,]
+activityPlot$ligand <- factor(activityPlot$ligand, levels = ligandOrder)
+
+
+
+```
+
+
+
+
+## Ligand Activity and Expression plot
+```{r}
+
+ligandActivityGG <- ggplot(activityPlot, aes(x = "In Vivo", y = ligand, fill = scale(activity_normalized_diff))) + 
+  geom_tile(colour = "black") + 
+  viridis::scale_fill_viridis(option = "D", expand = c(0,0)) + 
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  theme_bw() +
+  theme_manuscript + 
+  theme(axis.title = element_blank(), legend.title = element_blank(), legend.position = "left", axis.text.y = element_blank()) +
+  labs(title = "Ligand Activity", tag = "C")
+  
+
+ligandExpressionGG <- ggplot(ligandPlot, aes(x = ctRenamed, y = gene, colour = expression_scaled, size = ifelse(fraction==0, NA, fraction))) + 
+  geom_point() + 
+  viridis::scale_color_viridis(option = "D") + 
+  facet_grid(rows = ~species + stage, scales = "free", space = "free") + 
+  theme_bw() +
+  theme_manuscript + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom", axis.title = element_blank(), legend.title = element_blank()) +
+  scale_size(range = c(0,4)) +
+  labs(title = "Ligand Expression", tag = "D")
+
+
+(ligandActivityGG | ligandExpressionGG) + plot_layout(widths = c(.5,10))
+
+```
+
+
+## Circos
+```{r}
+
+curatedCircos <- c("PDGFA", "IL1A", "OSM", "EBI3", "TGFB1", "TNF", "MMP13", "GAS6", "HBEGF", "ICAM1", "IL1B", "APOE", "EGF", "CSF1", "NOG", "ADM", "TNFSF10", "OCLN", "EDN1", "ADM")
+
+curatedCircos <- c("PDGFA", "OSM", "IL1A", "EBI3", "EGF", "CSF1", "TGFB1", "TNF", "ICAM1", "OCLN")
+
+tempPri <- prioritization_tables$prioritization_tbl_ligand_receptor
+tempPri <- tempPri[tempPri$sender %not in% c("In Vivo Mouse NPC", "In Vivo imOL", "In Vivo maOL", "In Vivo Mouse GPC", "In Vivo Mouse Ependymal", "In Vivo Astrocyte"),]
+
+tempPri <- tempPri[tempPri$niche == "In Vivo",]
+tempPri <- tempPri[tempPri$receptor_fraction > .1,]
+
+
+top_ligand_receptor_niche_df = tempPri %>% dplyr::select(niche, sender, receiver, ligand, receptor, prioritization_score) %>% group_by(ligand, receptor) %>% top_n(1, prioritization_score) %>% ungroup() %>% dplyr::select(ligand, receptor, niche) 
+
+
+prioritized_tbl_oi = tempPri %>% dplyr::filter(ligand %in% curatedCircos) %>% dplyr::select(niche, sender, receiver, ligand,  receptor, ligand_receptor, prioritization_score) %>% distinct() %>% inner_join(top_ligand_receptor_niche_df) %>% group_by(ligand) %>% dplyr::filter(receiver == "In Vivo GPC4") %>% top_n(2, prioritization_score) %>% ungroup() 
+
+unique(prioritized_tbl_oi$sender)
+
+colors_sender <- c("#00BF7D","#D89000", "#E76BF3", "#00B0F6", "#00BFC4", "#39B600", "#A3A500")
+names(colors_sender) <- unique(prioritized_tbl_oi$sender)
+
+colors_receiver <- "turquoise"
+names(colors_receiver) <- unique(prioritized_tbl_oi$receiver)
+
+
+circos_output = make_circos_lr(prioritized_tbl_oi, colors_sender, colors_receiver)
+
+unique(prioritized_tbl_oi$sender)
+
+
+
+
+circos_output = make_circos_lr(prioritized_tbl_oi, colors_sender, colors_receiver)
+
+
+```
+## Receptors for Supp Table
+```{r}
+
+receptorSup <- pri
+receptorSup <- receptorSup[,c(2,5,6,18,20)]
+receptorSup <- receptorSup[!duplicated(receptorSup),]
+receptorSup <- receptorSup[order(receptorSup$receptor, receptorSup$ligand),]
+
+write.table(receptorSup, "output/NicheNet/receptorSuppTable.txt", quote = F, row.names = F, sep = "\t")
+
+```
+
+
+## Receptor Expression for plotting
+
+```{r}
+
+##
+tempDF <- pri[pri$ligand %in% ligandsCurated,]
+length(unique(tempDF$receptor))
+tempDF <- tempDF[,c(1, 4:6, 18:20)]
+tempDF <- tempDF[!duplicated(tempDF),]
+unique(tempDF$receptor)
+
+tempDF <- tempDF[tempDF$receptor %in% priInvivo$receptor,]
+
+tempDF$niche <- factor(tempDF$niche, levels = c("In Vivo", "In Vitro"))
+
+
+
+#activityPlot <- activityPlot[activityPlot$ligand %not in% ligandRemove,]
+#ligandPlot <- ligandPlot[ligandPlot$gene %not in% ligandRemove,]
+
+tempDF$ligand_receptor <- factor(tempDF$ligand_receptor, levels = unique(tempDF[order(tempDF$ligand, tempDF$receptor),]$ligand_receptor))
+
+tempDF$receptor_fraction <- tempDF$receptor_fraction * 100
+
+
+```
+
+## Receptor Plot
+```{r}
+
+receptorGG <- ggplot(tempDF, aes(y = niche, x = ligand_receptor, fill = receptor_expression_scaled, size = ifelse(receptor_fraction==0, NA, receptor_fraction))) + 
+  geom_point(color = "black", pch = 21) + 
+  theme_bw() +
+  theme_manuscript + 
+  scale_fill_gradientn(colors = PurpleAndYellow()) + 
+  theme(legend.position = "right", panel.spacing=unit(0, "lines"), axis.title = element_blank(), axis.text = element_text(angle = 90, hjust = 1)) + 
+  scale_size(range = c(0,20)) +
+  labs(tag = "C", title = "In Vivo and In Vitro GPC Receptor Expression of Curated Ligands", size = "% Expressed", fill = "Scaled Expression") + 
+    guides(colour = guide_colorbar(title.position = "top", title.theme = element_text(size = axisTitleSize)), 
+         size = guide_legend(title.position = "top", title.theme = element_text(size = axisTitleSize)))
+
+receptorGG
+
+```
+
+## Combined Plots
+```{r}
+mouse <- readRDS("output/RDS/mouse.rds")
+
+mouseDim <- DimPlotCustom(mouse, group.by = "cellType", label = T) + theme_bw() + theme_manuscript + theme(legend.position = "bottom") + labs(tag = "A")
+
+# This will limit which come from the next function
+mouseMarkers <- c("Pdgfra", "Ptprz1", 
+                  "Gpr17", "Bcas1", 
+                  "Nkx6-2", "Mog",
+                  "Gfap", "Aqp4",
+                  "P2ry12", "Itgam",
+                  "Cldn5", "Pecam1",
+                  "Acta2", "Des",
+                  "Dlx2", "Elavl4",
+                  "Pf4", "Cd163",
+                  "Tmem212", "Ccdc153")
+
+#You can extract percent expression from this seurat function... providing features makes it way faster. $data is what you want 
+mouseDotPlot <- DotPlot(mouse, features = mouseMarkers)$data
+
+# For ordering in the plot
+mouseLevels <- c("GPC", "imOL", "maOL", "Astrocyte", "Microglia", "Endothelial", "Pericyte", "NPC", "Macrophage", "Ependymal")
+mouseDotPlot$id <- factor(mouseDotPlot$id , levels = rev(mouseLevels))
+
+
+
+
+
+figMouseB <- ggplot(mouseDotPlot, aes(size = pct.exp, color = avg.exp.scaled, y = id, x = features.plot)) + 
+  geom_point() + 
+  scale_size_area() + 
+  viridis::scale_color_viridis() + 
+  theme_bw() + 
+  theme_manuscript +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom") +
+  labs(tag = "B", title = "Canonical Marker Expression", size = "% Expressed", colour = "Scaled Expression") + 
+    guides(colour = guide_colorbar(title.position = "top", title.theme = element_text(size = axisTitleSize)), 
+         size = guide_legend(title.position = "top", title.theme = element_text(size = axisTitleSize))) +
+  scale_size(range = c(0,4))
+
+figMouseB
+
+top <- (mouseDim | figMouseB) + plot_layout(widths = c(1,1.5))
+
+
+middle <- (ligandActivityGG | ligandExpressionGG) +  plot_layout(widths = c(.5,10))
+middle
+ 
+(top / middle / receptorGG )
+
+ggsave("output/Figures/Nichenet/nichenet_figure.pdf", width = 8.5, height = 12)
+
+
+
+```
+
+## Ligand, receptor, target Network construction
+```{r}
+# 
+# invivoNetwork <- ligand_activities_targets[ligand_activities_targets$ligand %in% tempDF$ligand,]
+# invivoNetwork <- invivoNetwork[invivoNetwork$receiver == "In Vivo GPC4",]
+# 
+# sigRegulons <- read.csv("output/DE/sigRegulons.csv")
+# sigRegulons <- sigRegulons[sigRegulons$Gene_Log2FC >0 & sigRegulons$AUC_Log2FC > 0,]
+# 
+# TF_Functions <- read.csv("data_for_import/TF_Functions.csv")
+# 
+# sigRegulons[sigRegulons$Gene %in% TF_Functions$Repressors,]
+# 
+# 
+# oligoTargets <- c("APOD", "S100B", "CCND1", "PTPRZ1", "MT3", "BCAS1", "OLIG1", "CNTN1", "CSPG4", "TNR", "LUZP2", "PCDH9", "BCAN", "FABP7", "CA10", "NRXN1", "PLLP", "PLP1", "BAMBI", "MBP", "OLIG2", "OLIG1", "ITM2B", "NKX2-2", "CNP")
+# 
+# networkTargets <- unique(c(as.character(tempDF$ligand), tempDF$receptor, 
+#                            sigRegulons$Gene, oligoTargets))
+# 
+# invivoNetworkFilt <- invivoNetwork[invivoNetwork$target %in% networkTargets,]
+# 
+# invivoNodes <- data.frame(node = unique(c(invivoNetworkFilt$ligand, invivoNetworkFilt$target)))
+# 
+# invivoNodes$type <- "Gene Target"
+# invivoNodes$type <- ifelse(invivoNodes$node %in% tempDF$receptor, "Receptor", invivoNodes$type)
+# invivoNodes$type <- ifelse(invivoNodes$node %in% tempDF$ligand, "Ligand", invivoNodes$type)
+# invivoNodes$type <- ifelse(invivoNodes$node %in% sigRegulons$Gene, "Regulon", invivoNodes$type)
+# invivoNodes <- merge(invivoNodes, deGPC4.sig, by.x = "node", by.y = "gene", all.x = T)
+# invivoNodes <- invivoNodes[,c(1,2,5)]
+# 
+# 
+# 
+# 
+# 
+# 
+# write.table(invivoNetworkFilt, "output/Networks/NicheNet/invivoNetworkNichenet.txt", sep = "\t", quote = F, row.names = F)
+# write.table(invivoNodes, "output/Networks/NicheNet/invivoNodesNichenet.txt", sep = "\t", quote = F, row.names = F)
+
+
+```
+
+## Ligand, receptor, target Network construction
+
+
+```{r}
+
+invivoNetwork <- ligand_activities_targets[ligand_activities_targets$ligand %in% tempDF$ligand,]
+invivoNetwork <- invivoNetwork[invivoNetwork$receiver == "In Vivo GPC4",]
+
+sigRegulons <- read.csv("output/DE/sigRegulons.csv")
+sigRegulons <- sigRegulons[sigRegulons$Gene_Log2FC >0 & sigRegulons$AUC_Log2FC > 0,]
+
+
+oligoTargets <- c("KLF6", "CCND1", "MBP", "CSPG4", "SULF2", "PCDH9", "BCAS1", "GPR17", "SEMA3E", "CA10", "OMG", "PLP1", "BAMBI", "CSPG5", "S100B", "APOD", "NRXN1", "TNR", "PLLP", "CNP", "CNTN1", "SOX10", "OLIG1", "OLIG2", "NKX2-2","PTPRZ1", "LUZP2" )
+
+regulonEdges <- invivoNetwork[invivoNetwork$target %in% sigRegulons$Gene,]
+regulonEdges$type <- "Regulon"
+regulonEdges$tempLigand <- paste0(regulonEdges$ligand, "_", regulonEdges$type)
+regulonEdges$tempTarget <- paste0(regulonEdges$target, "_", regulonEdges$type)
+regulonNodes <- data.frame(node = unique(c(regulonEdges$ligand, regulonEdges$target)),
+                           network = "Regulon")
+
+
+oligoEdges <- invivoNetwork[invivoNetwork$target %in% oligoTargets,]
+oligoEdges$type <- "Oligo"
+oligoEdges$tempLigand <- paste0(oligoEdges$ligand, "_", oligoEdges$type)
+oligoEdges$tempTarget <- paste0(oligoEdges$target, "_", oligoEdges$type)
+oligoNodes <- data.frame(node = unique(c(oligoEdges$ligand, oligoEdges$target)),
+                           network = "Oligo")
+
+
+receptorEdges <- invivoNetwork[invivoNetwork$target %in% tempDF$receptor,]
+receptorEdges$type <- "Receptor"
+receptorEdges$tempLigand <- paste0(receptorEdges$ligand, "_", receptorEdges$type)
+receptorEdges$tempTarget <- paste0(receptorEdges$target, "_", receptorEdges$type)
+receptorNodes <- data.frame(node = unique(c(receptorEdges$ligand, receptorEdges$target)),
+                           network = "Receptor")
+
+invivoNetworkFilt <- rbindlist(list(regulonEdges, oligoEdges, receptorEdges))
+invivoNetworkFilt <- invivoNetworkFilt[invivoNetworkFilt$ligand_target_weight > 0.05,]
+
+
+invivoNodes <- rbindlist(list(regulonNodes, oligoNodes, receptorNodes))
+
+invivoNodes$type <- "Gene Target"
+invivoNodes$type <- ifelse(invivoNodes$node %in% tempDF$receptor, "Receptor", invivoNodes$type)
+invivoNodes$type <- ifelse(invivoNodes$node %in% tempDF$ligand, "Ligand", invivoNodes$type)
+invivoNodes$type <- ifelse(invivoNodes$node %in% sigRegulons$Gene, "Regulon", invivoNodes$type)
+invivoNodes <- merge(invivoNodes, deGPC4.sig, by.x = "node", by.y = "gene", all.x = T)
+invivoNodes <- invivoNodes[,c(1,2,3,6)]
+invivoNodes$tempNode <- paste0(invivoNodes$node, "_", invivoNodes$network)
+invivoNodes
+
+TF_Functions <- read.csv("data_for_import/TF_Functions.csv")
+
+invivoNodes[invivoNodes$type == "Regulon" & invivoNodes$node %not in% c(TF_Functions$Activators, TF_Functions$Repressors),]
+
+invivoNodes <- invivoNodes[invivoNodes$node %not in% TF_Functions$Repressors,]
+
+invivoNetworkFilt <- invivoNetworkFilt[invivoNetworkFilt$target %not in% TF_Functions$Repressors,]
+
+
+write.table(invivoNetworkFilt, "output/Networks/NicheNet/invivoNetworkNichenet.txt", sep = "\t", quote = F, row.names = F)
+write.table(invivoNodes, "output/Networks/NicheNet/invivoNodesNichenet.txt", sep = "\t", quote = F, row.names = F)
+
+
+
+```
+
+# Supplementary
+```{r}
+
+
+
+dimLeidenFig <- DimPlotCustom(mouse, group.by = "leidenClusters", ncol = 1, label = T, pt.size = 3) & theme_bw() & theme_manuscript & NoLegend()  & ggtitle("In Vivo Mouse Leiden Clusters") & labs(tag = "A")
+
+dimLeidenFig
+
+```
+
+
+## Leiden Markers
+```{r}
+
+DefaultAssay(mouse) <- "RNA"
+
+canonicalMarkers <- c("Pdgfra", "Ptprz1", 
+                  "Gpr17", "Bcas1", 
+                  "Nkx6-2", "Mog",
+                  "Gfap", "Aqp4",
+                  "P2ry12", "Itgam",
+                  "Cldn5", "Pecam1",
+                  "Acta2", "Des",
+                  "Dlx2", "Elavl4",
+                  "Pf4", "Cd163",
+                  "Tmem212", "Ccdc153")
+
+markerDotPlotSupp <- DotPlot(mouse, features = canonicalMarkers, group.by = "leidenClusters")$data
+
+leidenTemp <- c("0" = "maOL",
+                          "1" = "maOL",
+                          "2" = "maOL",
+                          "3" = "maOL",
+                          "4" = "maOL",
+                          "5" = "maOL",
+                          "6" = "maOL",
+                          "7" = "Endothelial",
+                          "8" = "maOL",
+                          "9" = "maOL",
+                          "10" = "maOL",
+                          "11" = "maOL",
+                          "12" = "maOL",
+                          "13" = "Microglia",
+                          "14" = "imOL",
+                          "15" = "GPC",
+                          "16" = "Astrocyte",
+                          "17" = "NPC",
+                          "18" = "Ependymal",
+                          "19" = "Pericyte",
+                          "20" = "Macrophage")
+
+
+leidenTemp <- paste0(0:20, " - ", leidenTemp)
+names(leidenTemp) <- 0:20
+
+markerDotPlotSupp$id <- plyr::mapvalues(as.character(markerDotPlotSupp$id), from = names(leidenTemp), to = leidenTemp)
+
+markerDotPlotSupp$id <- factor(markerDotPlotSupp$id, levels = rev(c("15 - GPC",
+                                                                    "14 - imOL",
+                                                                    "5 - maOL",
+                                                                    "0 - maOL",
+                                                                    "1 - maOL",
+                                                                    "2 - maOL",
+                                                                    "3 - maOL",
+                                                                    "4 - maOL",
+                                                                    "6 - maOL",
+                                                                    "8 - maOL",
+                                                                    "9 - maOL",
+                                                                    "10 - maOL",
+                                                                    "11 - maOL",
+                                                                    "12 - maOL",
+                                                                    "16 - Astrocyte",
+                                                                    "13 - Microglia",
+                                                                    "7 - Endothelial",
+                                                                    "19 - Pericyte",
+                                                                    "17 - NPC",
+                                                                    "20 - Macrophage",
+                                                                    "18 - Ependymal")))
+
+
+
+figSuppMarkerPlot<- ggplot(markerDotPlotSupp, aes(size = pct.exp, fill = avg.exp.scaled, y = id, x = features.plot)) +
+  geom_point(color = "black", pch = 21) + 
+  scale_size_area(max_size = 15) + 
+  scale_fill_gradientn(colors = PurpleAndYellow()) + 
+  theme_bw() + 
+  theme_manuscript +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "right", panel.spacing=unit(0, "lines")) +
+  labs(tag = "B", title = "Canonical Marker Expression", size = "% Expressed", fill = "Scaled Expression") + 
+    guides(colour = guide_colorbar(title.position = "top", title.theme = element_text(size = axisTitleSize)), 
+         size = guide_legend(title.position = "top", title.theme = element_text(size = axisTitleSize)))
+
+
+figSuppMarkerPlot
+
+
+```
+
+
+## Piece together
+
+```{r}
+
+((dimLeidenFig | figSuppMarkerPlot) / receptorGG) + plot_layout(heights = c(1,.25))
+
+ggsave("output/Figures/Nichenet/nichenetSupplement.pdf", width = 30, height = 20)
+
+
+```
+
+
+```{r}
+
+sessionInfo()
+
+```
+

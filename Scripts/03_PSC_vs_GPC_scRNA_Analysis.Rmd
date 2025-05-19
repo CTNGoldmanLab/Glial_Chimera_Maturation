@@ -1,0 +1,153 @@
+---
+title: "Initial Analysis of PSC vs GPC scRNA"
+author: "John Mariani"
+date: "12/6/2023"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+library(Seurat)
+library(tidyr)
+library(MAST)
+library(ggplot2)
+library(scPlottingTools)
+library(patchwork)
+
+
+```
+
+
+```{r}
+
+
+source("Scripts/HelperFunctions.R")
+source("Scripts/StyleSettings.R")
+
+```
+
+# Load In Vivo Data for v3.1 samples
+
+```{r}
+
+mergedH <- readRDS("output/RDS/mergedH.rds")
+
+table(mergedH$stage)
+
+# Only use v3.1 for this analysis
+GPC_PSC <- subset(mergedH, subset = stage != "In Vivo")
+GPC_PSC <- subset(GPC_PSC, subset = chemistry == "v3.1")
+
+table(GPC_PSC$stage)
+
+
+DefaultAssay(GPC_PSC) <- "RNA"
+GPC_PSC <- NormalizeData(GPC_PSC)
+
+```
+
+
+## Determine Gene Expresion Fractions
+```{r}
+
+expressionFractionsPSC <- calcExpressionFractions(GPC_PSC, "stage")
+
+
+expressionFractionsPSCFilt <- expressionFractionsPSC[expressionFractionsPSC$pct.exp > 10,]
+highFractionPSC <- unique(expressionFractionsPSCFilt$features.plot)
+
+
+```
+
+
+## Setup MAST ZLM for DE
+
+```{r}
+
+# GPC_PSC.sca <- makeSCA(GPC_PSC, highFractionPSC)
+# 
+# 
+# modelMAST <- as.formula(object = "~stage+line+ngeneson+(1|orig.ident)")
+# 
+# options(mc.cores=8)
+# getOption("mc.cores")
+# 
+# ZLM.GPC_PSC <-MAST::zlm(formula = modelMAST, sca = GPC_PSC.sca, method='glmer',ebayes = F,
+#                        strictConvergence = FALSE, parallel = T)
+# 
+# colnames(ZLM.GPC_PSC@coefC)
+# 
+# 
+# 
+# saveRDS(ZLM.GPC_PSC, "output/DE/ZLM.GPC_PSC.rds")
+
+
+```
+
+## Run DE
+```{r}
+
+# ZLM.GPC_PSC <- readRDS("output/DE/ZLM.GPC_PSC.rds")
+# 
+# 
+# runLR(ZLM.GPC_PSC, c(0,-1,0,0),
+#       contrast0 = c(1,1,1/2,0),
+#       contrast1 = c(1,0,1/2,0),
+#       fileName = "GPC.vs.PSC")
+
+
+```
+
+# Add Infinite FC genes that LM assigns NAs
+```{r}
+
+GPC.vs.PSC <- read.delim("output/DE/GPC.vs.PSC.txt")
+#GPC.vs.PSC$logFC <- GPC.vs.PSC$logFC * -1
+tempNA <- GPC.vs.PSC[!complete.cases(GPC.vs.PSC),]
+tempNA <- tempNA[tempNA$FDR < 0.01,]
+tempNA <- tempNA[!is.na(tempNA$FDR),]
+expressionFractionsLine <- DotPlot(GPC_PSC, assay = "RNA", features = tempNA$gene, group.by = "stage", split.by = "line")$data
+expressionFractionsLineDF <- pivot_wider(data = expressionFractionsLine, values_from = pct.exp, names_from = id, id_cols = "features.plot")
+expressionFractionsLineDF$C27 <- rowMeans(expressionFractionsLineDF[,c(2,3)])
+expressionFractionsLineDF$WA09 <- rowMeans(expressionFractionsLineDF[,c(4,5)])
+
+# Keep genes that are not line dependent 
+expressionFractionsLineDFfilt <- expressionFractionsLineDF[expressionFractionsLineDF$C27 > .5 & expressionFractionsLineDF$WA09 > .5,]
+
+# Set them to the absolute max log2 fc + .1 for visualization
+expressionFractionsLineDFfilt$logFC <- ifelse(expressionFractionsLineDFfilt$`In Vitro - GPC Stage_C27` > expressionFractionsLineDFfilt$`In Vitro - Pluripotent Stem Cell Stage_C27`, max(abs(GPC.vs.PSC$logFC), na.rm = T) + .1, (max(abs(GPC.vs.PSC$logFC), na.rm = T) + .1)*-1)
+
+tempNA <- tempNA[tempNA$gene %in% expressionFractionsLineDFfilt$features.plot,]
+
+tempNA$logFC <- plyr::mapvalues(tempNA$gene, from = expressionFractionsLineDFfilt$features.plot, to = expressionFractionsLineDFfilt$logFC)
+tempNA$logFC  <- as.numeric(tempNA$logFC )
+
+GPC.vs.PSC.sig <- GPC.vs.PSC[complete.cases(GPC.vs.PSC) & GPC.vs.PSC$FDR < 0.01 & abs(GPC.vs.PSC$logFC) > 0.25,]
+GPC.vs.PSC.sig <- rbind(GPC.vs.PSC.sig, tempNA)
+
+write.table(GPC.vs.PSC.sig, paste0("output/DE/GPC.vs.PSC.sig.txt"), sep = "\t", row.names = F, quote = F)
+
+####
+GPC.vs.PSC.sig <- read.delim("output/DE/GPC.vs.PSC.sig.txt")
+
+GPC.vs.PSC.update <- rbind(GPC.vs.PSC[GPC.vs.PSC$gene %not in% GPC.vs.PSC.sig$gene,], GPC.vs.PSC.sig)
+
+write.table(GPC.vs.PSC.update, paste0("output/DE/GPC.vs.PSC.allFC.txt"), sep = "\t", row.names = F, quote = F)
+
+
+
+```
+
+
+
+```{r}
+
+sessionInfo()
+
+```

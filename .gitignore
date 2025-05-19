@@ -47,3 +47,36 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# More
+.DS_Store
+Archive
+mouse
+SupTables
+Figures
+.ipynb_checkpoints
+
+data_for_import/Matrices/*
+data_for_import/scATAC
+data_for_import/NicheNet
+data_for_import/CUT&Tag/bam
+data_for_import/CUT&Tag/peak
+
+output/SupTables
+output/DE
+output/RDS
+output/Figures
+output/NicheNet
+output/Networks
+output/scVI/*.h5ad
+output/SCENIC
+output/Palantir
+output/CUT&Tag
+output/H5AD
+
+
+## Even More
+00_Initialize_Project.R
+
+
+

@@ -1,0 +1,162 @@
+---
+title: "DiffBind & ChIPseeker"
+output: html_document
+date: "2024-07-12"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+```
+
+### load library
+```{r, warning=FALSE, message = FALSE}
+
+library(DiffBind)
+library(tidyverse)
+library(stringr)
+library(tidyr)
+library(DESeq2)
+library(ChIPseeker)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(org.Hs.eg.db)
+
+```
+
+### DiffBind
+Output csv files with columns of Chr, Start, End, Conc, Conc_CTd180, Conc_CTd0, Fold, p-value, FDR.
+```{r, warning=FALSE, message=FALSE}
+
+#read in sample sheet
+sampleTable <- read.csv(file = "data_for_import/CUT&Tag/CUT&TagSampleSheet.csv")
+#change col name to fit the diffbind design
+colnames(sampleTable)[colnames(sampleTable) == "CellSet"] <- "Factor"
+
+histone_list=c("K4me3", "K27ac", "K27me3")
+
+mark <- "K4me3"
+
+for (mark in histone_list){
+  
+  #subset sample sheet for each histone mark
+  sampleTable_more <- sampleTable[sampleTable$Histone == mark, ]
+
+  ######
+  ###(To run DiffBind from scratch, please download the bam files and peak files from GEO database to "data_for_import/CUT&Tag/bam/" and "data_for_import/CUT&Tag/peak" folder respectively, please also make sure the file names match according to the sample sheet above; Alternatively, you can load in RData with all the peak information stored in it and continue do analysis with it.)###
+  ######
+  
+  ##sampleSheet
+  #histone <- dba(sampleSheet=sampleTable_more)
+
+  ##blacklist
+  #histone <- dba.blacklist(histone, blacklist=DBA_BLACKLIST_GRCH38, greylist=FALSE)
+
+  ##count
+  #histone <- dba.count(histone)
+
+  ##normalize
+  #histone <- dba.normalize(histone)
+  
+  #save RData file
+  #dba.save(histone, paste(, mark, "Peaks_default", sep = "_"), dir = "output/CUT&Tag/DiffBind")
+  
+  #load RData file
+  histone <- dba.load(file = paste(mark, "Peaks_default", sep = "_"), dir = "output/CUT&Tag/DiffBind")
+  
+  #contrast and analyze
+  histone <- dba.contrast(histone, design="~ Factor + Condition", minMembers=2, reorderMeta = list(Condition="CTd0"))
+  dba.contrast(histone, bGetCoefficients=TRUE)
+  histone <- dba.contrast(histone, design="~ Factor + Condition", contrast = c("Condition", "CTd120", "CTd0"))
+  histone <- dba.analyze(histone)
+  histone <- dba.contrast(histone, design="~ Factor + Condition", contrast = c("Condition", "CTd180", "CTd0"))
+  histone <- dba.analyze(histone)
+  histone
+  
+  #set working directory to store DiffBind output files
+  setwd("output/CUT&Tag/DiffBind")
+  
+  #save output
+  dba.report(histone, contrast=1, method=DBA_DESEQ2, bUsePval=FALSE, bNormalized=TRUE, file=paste(mark, "CTd120vsCTd0_default_all", sep = "_"))
+  dba.report(histone, contrast=2, method=DBA_DESEQ2, bUsePval=FALSE, bNormalized=TRUE, file=paste(mark, "CTd180vsCTd0_default_all", sep = "_"))
+  
+  #PCA plot
+  print(mark)
+  mypalette=c("green4", "blue", "darkblue")
+  dba.plotPCA(histone, DBA_CONDITION, label = DBA_TISSUE, vColors = mypalette, labelSize = 0.5) 
+  
+  #set working directory back to the original
+  setwd("../../../")
+  
+}
+
+```
+
+### Format DiffBind output csv files to BED files
+Output BED files with columns of Chr(V1), Start(V2), End(V3), DiffBindpeak_#(V4), Fold(V5), p.value(V6), FDR(V7)
+```{bash}
+
+workingdir="output/CUT&Tag/DiffBind/"
+
+#delete the col names, sort by absolute value in the 7th column (log2 fold change), change scientific notation of chromasome coordinate to normal form, if any
+for ifile in $workingdir/*_CTd1[28]0vsCTd0_default_all.csv; do
+  sampleName=$(echo "$ifile" | awk -F'/' '{print $NF}' | sed -r 's/.csv//g' | sed -r 's/DBA_//g')
+  echo "working on $sampleName..."
+  awk 'NR==1{next} NR>1 {print $0}' $ifile | sed -r 's/-([0-9.]+)/\1-/g;' | sed 's/"//g' | sort -t , -k7,7nr | sed -r 's/([0-9.]+)-/-\1/g' | awk -F',' '{OFS="\t"; $2=sprintf("%d", $2); $3=sprintf("%d", $3); print "chr"$1, $2, $3, "DiffBindpeak_"NR, $7, $8, $9}' | sed 's/chrMT/chrM/g' | grep -v "chrKI" | grep -v "chrGL" > $workingdir/${sampleName}.bed
+done
+
+```
+
+
+### peak annotation
+#### #K4me3 / K27me3: annotate to promoters using ChIPseeker 
+Output txt files with columns of "seqnames", "start", "end", "width", "strand", "V4", "V5", "V6", "V7", "annotation", "geneChr", "geneStart", "geneEnd", "geneLength", "geneStrand", "geneId", "transcriptId", "distanceToTSS", "ENSEMBL", "SYMBOL", "GENENAME" (V4, V5, V6, V7 as from above BED file).
+```{r, warning=FALSE, message=FALSE}
+
+workingdir <- "output/CUT&Tag/DiffBind/"
+
+txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+
+samplefiles <- list.files(path = workingdir, pattern = "K*me3_CTd1[28]0vsCTd0_default_all.bed", full.names=T)
+samplefiles <- as.list(samplefiles)
+names(samplefiles) <- c("K27me3_CTd120", "K27me3_CTd180", "K4me3_CTd120", "K4me3_CTd180")
+
+#peak annotation with ChIPseeker
+peakAnnoList <- lapply(samplefiles, annotatePeak, TxDb=txdb, tssRegion=c(-2000, 2000), verbose=FALSE, annoDb="org.Hs.eg.db")
+
+#plot
+plotAnnoBar(peakAnnoList)
+
+#write output 
+for (name in names(samplefiles)){
+  annot <- data.frame(peakAnnoList[[name]]@anno)
+  write.table(annot, file = paste0(workingdir, name, "_diff_peak_annotation_promoter.txt"), sep = "\t", row.names = F, quote = T)
+}
+
+```
+
+#### K27ac: annotate to enhancers using bedtools intersect with Genehancer database
+Output txt files with columns of chr(V1), element_start(V2), element_end(V3), GHid--GeneHancer element identifier(V4), is_elite(V5), regulatory_element_type(V6), Chr(V7), Start(V8), End(V9), DiffBindpeak_#(V10), Fold (V11), p-value (V12), FDR (V13).
+```{bash}
+
+workingdir="output/CUT&Tag/DiffBind/"
+
+#Genehancer database annotation file
+Genehancer="data_for_import/CUT&Tag/GeneHancer_AnnotSV_elements_v5.18_elite_enhancer.bed"
+
+inputFiles=("K27ac_CTd120vsCTd0_default_all.bed" "K27ac_CTd180vsCTd0_default_all.bed")
+
+for ifile in "${inputFiles[@]}"
+do
+  sampleName=$(echo "$ifile" | awk -F'/' '{print $NF}' | sed -r 's/vsCTd0_default_all.bed//g')
+  echo $sampleName
+  bedtools intersect -wa -wb -a $Genehancer -b $workingdir/$ifile > $workingdir/${sampleName}_diff_peak_annotation_enhancer.txt
+done
+
+```
+
+```{r, message = FALSE}
+sessionInfo()
+```
+

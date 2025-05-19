@@ -1,0 +1,257 @@
+---
+title: "Processing of data for species integration"
+author: "John Mariani"
+date: "3/6/2023"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+```
+
+## Load in Libraries
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(devtools)
+library(patchwork)
+library(dplyr)
+library(SeuratDisk)
+library(biomaRt)
+library(Matrix)
+
+
+options(future.globals.maxSize = 16000 * 1024^2)
+
+source("Scripts/HelperFunctions.R")
+
+```
+
+## Read in Human and Mouse Counts
+
+```{r}
+
+mergedH <- readRDS("output/RDS/mergedH.rds")
+mergedM <- readRDS("output/RDS/mergedM.rds")
+
+# Remove ES Stage
+mergedH <- subset(mergedH, subset = stage != "In Vitro - Pluripotent Stem Cell Stage")
+table(mergedH$stage)
+
+table(mergedM$orig.ident)
+
+
+```
+## Read in gene names and ensembl IDs
+```{r}
+
+humanFeatures <- read.delim("data_for_import/humanFeatures.txt")
+mouseFeatures <- read.delim("data_for_import/mouseFeatures.txt")
+
+```
+
+## Subset out GPC4 so we can use all known human receptors/downstream genes in these cells
+```{r}
+
+invitroInvivo <- readRDS("output/RDS/invitroInvivo.rds")
+gpc4 <- subset(invitroInvivo, subset = cellType == "GPC4")
+
+gpc4 <- subset(mergedH, cells = Cells(gpc4))
+theRest <- subset(mergedH, subset = cellName %not in% Cells(gpc4))
+
+dim(gpc4)
+
+```
+
+
+
+## Make counts to edit. This seems safer than just merging and letting Seurat handle it
+```{r}
+
+rawM <- mergedM@assays$RNA@counts
+rawH <- theRest@assays$RNA@counts
+
+dim(rawH)
+
+humanFeatures$seurat <- row.names(rawH)
+mouseFeatures$seurat <- row.names(rawM)
+
+#### Add If statements for these outputs
+
+martH <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl", host = 'http://apr2022.archive.ensembl.org/')
+ensemblGeneListHall <- getBM(attributes = c("ensembl_gene_id","external_gene_name", "mmusculus_homolog_ensembl_gene", "mmusculus_homolog_orthology_type", "mmusculus_homolog_associated_gene_name"), filters = "ensembl_gene_id", values = humanFeatures$ensembl_gene_id, mart = martH)
+
+#write.csv(ensemblGeneListHall, "data_for_import/NicheNet/ensemblGeneListHall.csv", quote = F, row.names = F)
+
+ensemblGeneListH <- ensemblGeneListHall[ensemblGeneListHall$mmusculus_homolog_orthology_type == "ortholog_one2one",]
+ensemblGeneListH <- merge(ensemblGeneListH, humanFeatures, by.x = "ensembl_gene_id", by.y = "ensembl_gene_id")
+
+martM <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "mmusculus_gene_ensembl", host = 'http://apr2022.archive.ensembl.org/')
+ensemblGeneListMall <- getBM(attributes = c("ensembl_gene_id","external_gene_name", "hsapiens_homolog_ensembl_gene", "hsapiens_homolog_orthology_type", "hsapiens_homolog_associated_gene_name"), filters = "ensembl_gene_id", values = mouseFeatures$ensembl_gene_id, mart = martM)
+
+#write.csv(ensemblGeneListMall, "data_for_import/NicheNet/ensemblGeneListMall", quote = F, row.names = F)
+
+
+```
+
+## H19 is a weird gene that is not a one to one ortholog but has the same name oddly...
+```{r}
+
+sameNameH <- ensemblGeneListHall[ensemblGeneListHall$external_gene_name == ensemblGeneListHall$mmusculus_homolog_associated_gene_name,]
+sameNameH <- sameNameH[sameNameH$external_gene_name != "",]
+
+sameNameM <-  ensemblGeneListMall[ensemblGeneListMall$external_gene_name == ensemblGeneListMall$hsapiens_homolog_associated_gene_name,]
+sameNameM <- sameNameM[sameNameM$external_gene_name != "",]
+
+sameNameH2 <- humanFeatures[humanFeatures$external_gene_name %in% mouseFeatures$external_gene_name,]
+
+```
+
+
+## Make Dual Species object for all but GPC4
+```{r}
+
+ensemblGeneListM <- ensemblGeneListMall[ensemblGeneListMall$hsapiens_homolog_orthology_type == "ortholog_one2one",]
+ensemblGeneListM <- merge(ensemblGeneListM, mouseFeatures, by.x = "ensembl_gene_id", by.y = "ensembl_gene_id")
+
+# These genes were filtered out because their biotypes differ between species and weren't any of the categories we kept
+leftoutH <- ensemblGeneListH[ensemblGeneListH$ensembl_gene_id %not in% ensemblGeneListM$hsapiens_homolog_ensembl_gene,]
+leftoutM <- ensemblGeneListM[ensemblGeneListM$ensembl_gene_id %not in% ensemblGeneListH$mmusculus_homolog_ensembl_gene,]
+
+
+ensemblGeneListH <- ensemblGeneListH[ensemblGeneListH$ensembl_gene_id %in% ensemblGeneListM$hsapiens_homolog_ensembl_gene,]
+ensemblGeneListM <- ensemblGeneListM[ensemblGeneListM$ensembl_gene_id %in% ensemblGeneListH$mmusculus_homolog_ensembl_gene,]
+
+
+humanOne2One <- rawH[row.names(rawH) %in% ensemblGeneListH$seurat,]
+mouseOne2One <- rawM[row.names(rawM) %in% ensemblGeneListM$seurat,]
+
+rubric <- merge(ensemblGeneListH, ensemblGeneListM, by.x = "ensembl_gene_id", by.y = "hsapiens_homolog_ensembl_gene")
+
+humanOne2One <- humanOne2One[match(rubric$seurat.x, row.names(humanOne2One)),]
+mouseOne2One <- mouseOne2One[match(rubric$seurat.y, row.names(mouseOne2One)),]
+
+
+head(row.names(humanOne2One))
+head(row.names(mouseOne2One))
+
+row.names(mouseOne2One) <- row.names(humanOne2One)
+
+one2one <- cbind(humanOne2One, mouseOne2One)
+
+humanOnly <- rawH[row.names(rawH) %not in% rubric$seurat.x,]
+mouseOnly <- rawM[row.names(rawM) %not in% rubric$seurat.y,]
+
+#Rename since they're apparently not orthologs
+row.names(mouseOnly)[row.names(mouseOnly) == "H19"] <- "h19"
+
+humanOnlyEmpty <- Matrix(nrow = nrow(humanOnly), ncol = ncol(mouseOnly), data = 0, sparse = TRUE)
+colnames(humanOnlyEmpty) <- colnames(mouseOnly)
+
+mouseOnlyEmpty <- Matrix(nrow = nrow(mouseOnly), ncol = ncol(humanOnly), data = 0, sparse = TRUE)
+colnames(mouseOnlyEmpty) <- colnames(humanOnly)
+
+humanOnly <- cbind(humanOnly, humanOnlyEmpty)
+mouseOnly <- cbind(mouseOnlyEmpty, mouseOnly)
+
+dim(one2one)
+dim(humanOnly)
+dim(mouseOnly)
+
+identical(colnames(one2one), colnames(humanOnly))
+identical(colnames(one2one), colnames(mouseOnly))
+
+dualSpecies <- rbind(one2one, humanOnly)
+dualSpecies <- rbind(dualSpecies, mouseOnly)
+
+dim(dualSpecies)
+dim(rawH)
+dim(rawM)
+
+```
+
+## Reames cell names to species Human vs Mouse
+```{r}
+
+colnames(dualSpecies)[1:ncol(rawH)] <- paste0(colnames(dualSpecies)[1:ncol(rawH)] , "H")
+
+colnames(dualSpecies)[(ncol(rawH)+1):ncol(dualSpecies)] <- paste0(colnames(dualSpecies)[(ncol(rawH)+1):ncol(dualSpecies)], "M")
+
+gpc4 <- gpc4@assays$RNA@counts
+
+dim(gpc4)
+
+dim(dualSpecies)
+
+colnames(gpc4) <- paste0(colnames(gpc4), "H")
+
+```
+
+## Add GPC4 back with all human genes and add metadata
+```{r}
+
+dualSpeciesSeurat <- CreateSeuratObject(dualSpecies)
+dualSpeciesSeurat <- NormalizeData(dualSpeciesSeurat)
+dim(dualSpeciesSeurat)
+
+gpc4Seurat <- CreateSeuratObject(gpc4)
+gpc4Seurat <- NormalizeData(gpc4Seurat)
+
+dualSpeciesOne2One <- subset(dualSpeciesSeurat, features =  row.names(one2one))
+dim(dualSpeciesOne2One)
+
+finalNiche <- merge(dualSpeciesOne2One, gpc4Seurat)
+dim(finalNiche)
+
+metaH <- mergedH@meta.data
+metaM <- mergedM@meta.data
+
+metaH$species <- "Human"
+metaM$species <- "Mouse"
+
+row.names(metaH) <- paste0(row.names(metaH), "H")
+row.names(metaM) <- paste0(row.names(metaM), "M")
+
+meta <- rbind(metaH, metaM)
+meta <- meta[match(row.names(finalNiche@meta.data), row.names(meta)),]
+
+mouse <- readRDS("output/RDS/mouse.rds")
+
+invitroInvivoCellType <- data.frame(row.names = Cells(invitroInvivo), cellType = invitroInvivo$cellType)
+mouseCellType <- data.frame(row.names = Cells(mouse), cellType = mouse$cellType)
+mouseCellType$cellType <- paste0("Mouse ", mouseCellType$cellType)
+row.names(invitroInvivoCellType) <- paste0(row.names(invitroInvivoCellType), "H")
+row.names(mouseCellType) <- paste0(row.names(mouseCellType), "M")
+
+cellTypes <- rbind(invitroInvivoCellType, mouseCellType)
+cellTypes <- cellTypes[match(Cells(finalNiche), row.names(cellTypes)),, drop = F]
+
+levels(cellTypes$cellType)
+
+meta$cellType <- cellTypes$cellType
+
+table(cellTypes$cellType)
+
+finalNiche@meta.data <- meta
+
+
+
+```
+
+
+```{r}
+
+saveRDS(finalNiche, "output/RDS/finalNiche.rds")
+
+```
+
+
+```{r}
+
+sessionInfo()
+
+```
+

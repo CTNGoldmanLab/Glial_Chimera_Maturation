@@ -1,0 +1,16 @@
+sample,line,chemistry,stage,sort
+GOL-2512A5,C27,v3.1,In Vivo,DAPI-
+GOL2976A5,C27,v3.1,In Vivo,DAPI-
+Sample_32,WA09,v2,In Vivo,DAPI-
+Sample_33,WA09,v2,In Vivo,DAPI-
+Sample_34,WA09,v2,In Vivo,DAPI-
+Sample_C27_CD140_3,C27,v3.1,In Vitro - GPC Stage,CD140a+
+Sample_C27_DAPI_3,C27,v3.1,In Vitro - GPC Stage,DAPI-
+Sample_C27_Shi,C27,v2,In Vivo,DAPI-
+Sample_C27_undiff_1,C27,v3.1,In Vitro - Pluripotent Stem Cell Stage,DAPI-
+Sample_CD-140,WA09,v2,In Vitro - GPC Stage,CD140a+
+Sample_CD140_WA09_5,WA09,v3.1,In Vitro - GPC Stage,CD140a+
+Sample_unsorted,WA09,v2,In Vitro - GPC Stage,DAPI-
+Sample_Unsorted_WA09_5,WA09,v3.1,In Vitro - GPC Stage,DAPI-
+Sample_WA09_Shiv,WA09,v2,In Vivo,DAPI-
+Sample_WA09_undiff_1,WA09,v3.1,In Vitro - Pluripotent Stem Cell Stage,DAPI-

@@ -1,0 +1,163 @@
+---
+title: "Initial Analysis of Human Cells out of Shiverer Chimeras"
+author: "John Mariani"
+date: "12/6/2022"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+library(Seurat)
+
+
+library(scPlottingTools)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(MAST)
+library(plyr)
+library(xlsx)
+library(patchwork)
+library(ggplot2)
+library(scales)
+library(ggVennDiagram)
+library(data.table)
+library(slingshot)
+library(tradeSeq)
+library(tidyr)
+library(dplyr)
+library(plyr)
+library(magrittr)
+library(viridis)
+library(tidyr)
+library(EnhancedVolcano)
+
+`%not in%` <- function(x, table) is.na(match(x, table, nomatch = NA_integer_))
+
+
+axisTitleSize <- 24
+axisTextSize <- 18
+labelFont = 18
+titleFont = 22
+tagSize = 26
+
+source("Scripts/HelperFunctions.R")
+
+theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 
+        axis.title = element_text(size = axisTitleSize), 
+        title = element_text(size = titleFont), 
+        legend.title = element_text(size = titleFont),
+        legend.text = element_text(size = axisTitleSize),
+        plot.tag = element_text(size = tagSize))
+
+manuscriptPalette <- c("In Vivo" = "red2", 
+                       "In Vitro - GPC Stage" = "#2E30FF",
+                       "NPC" = "magenta",
+                       "GPC1" = "forestgreen",
+                       "GPC2" = "darkorange",
+                       "GPC3" = "firebrick2",
+                       "GPC4" = "turquoise",
+                       "Astrocyte" = "dodgerblue2",
+                       "imOL" = "gold",
+                       "maOL" = "darkorchid4",
+                       "GPC" = "turquoise",
+                       "imAstrocyte" = "firebrick2",
+                       "cGPC" = "darkorange",
+                       "cAPC" = "forestgreen")
+
+
+
+
+```
+
+
+
+## Load, subset, and plug in SCVI data
+
+```{r}
+
+merged <- readRDS("output/RDS/mergedH.rds")
+invivo <- subset(merged, subset = stage %in% c("In Vivo"))
+
+embeddings <- read.csv("output/scVI/Invivo_umapEmbeddings.csv", header = F)
+names(embeddings) <- c("UMAP_1", "UMAP_2")
+row.names(embeddings) <- Cells(invivo)
+
+invivo[['umap']] <- CreateDimReducObject(embeddings = as.matrix(embeddings), key = "UMAP_", assay = "RNA")
+
+leidenClusters <- read.csv("output/scVI/Invivo_leidenClusters.csv")
+invivo$leiden_clusters <- as.factor(leidenClusters$leiden_scVI)
+
+invivo <- SetIdent(invivo, value = "leiden_clusters")
+
+
+
+
+```
+
+## Import SCENIC AUCs
+```{r}
+
+invivoAUC <- read.csv("output/SCENIC/auc_forInVivo_cells_only.txt", row.names = 1)
+dim(invivoAUC)
+names(invivoAUC) <- gsub(pattern = "\\.\\.\\.", replacement = "", x = names(invivoAUC))
+invivoAUC <- t(as.matrix(invivoAUC))
+identical(colnames(invivoAUC), Cells(invivo))
+invivoAUC <- CreateAssayObject(data = invivoAUC)
+
+invivo[["SCENIC"]] <- invivoAUC
+
+
+```
+
+## Initial Cell Type markers for simplification
+
+```{r}
+
+VlnPlot(invivo, group.by = "leiden_clusters", c("PDGFRA", "SOX10", "SOX9", "MKI67", "GFAP", "CD44", "MBP", "MOBP", "NKX6-2"))
+
+
+```
+
+## Assign Celltype names
+```{r}
+
+invivo <- RenameIdents(invivo, c("0" = "GPC",
+                          "5" = "GPC",
+                          "8" = "cGPC",
+                          "9" = "cAPC",
+                          "4" = "imAstrocyte",
+                          "7" = "Astrocyte",
+                          "1" = "imOL",
+                          "2" = "imOL",
+                          "6" = "maOL",
+                          "3" = "maOL"))
+
+
+Idents(invivo) <- factor(Idents(invivo), levels = c("Astrocyte", "imAstrocyte", "cAPC", "cGPC", "GPC", "imOL", "maOL"))
+
+invivo$cellType <- Idents(invivo)
+
+DimPlot(invivo)
+
+saveRDS(invivo, "output/RDS/invivo.rds")
+
+
+
+
+```
+
+
+```{r}
+
+sessionInfo()
+
+```
+
+
+
