@@ -323,13 +323,13 @@ DefaultAssay(atac) <- 'RNA'
 prestoResultsGene <- wilcoxauc(atac, seurat_assay = "RNA")
 prestoResultsGene <- prestoResultsGene[order(prestoResultsGene$logFC, decreasing = T),]
 
-write.table(prestoResultsGene, "output/DE/scATAC_gene_activity_all.txt", sep = "\t", quote = F, row.names = F)
+#write.table(prestoResultsGene, "output/DE/scATAC_gene_activity_all.txt", sep = "\t", quote = F, row.names = F)
 
 
 prestoResultsGene.filt <- prestoResultsGene[prestoResultsGene$padj < 0.01,]
 prestoResultsGene.filt <- prestoResultsGene.filt[prestoResultsGene.filt$group != "imOL",]
 
-write.table(prestoResultsGene.filt, "output/DE/scATAC_gene_activity_de.txt", sep = "\t", quote = F, row.names = F)
+#write.table(prestoResultsGene.filt, "output/DE/scATAC_gene_activity_de.txt", sep = "\t", quote = F, row.names = F)
 
 
 ```
@@ -487,7 +487,7 @@ prestoResultsPeaks <- prestoResultsPeaks[order(prestoResultsPeaks$logFC, decreas
 
 prestoResultsPeaks.sig <- prestoResultsPeaks[prestoResultsPeaks$padj < 0.01 & prestoResultsPeaks$group != "imOL",]
 
-write.table(prestoResultsPeaks.sig, "output/DE/scATAC_peaks_de.txt", sep = "\t", quote = F, row.names = F)
+#write.table(prestoResultsPeaks.sig, "output/DE/scATAC_peaks_de.txt", sep = "\t", quote = F, row.names = F)
 
 
 
@@ -500,7 +500,7 @@ write.table(prestoResultsPeaks.sig, "output/DE/scATAC_peaks_de.txt", sep = "\t",
 
 ```{r}
 
-saveRDS(atac, "output/RDS/atac.rds")
+#saveRDS(atac, "output/RDS/atac.rds")
 atac.filt <- subset(atac, subset = predicted.id != "imOL")
 
 Idents(atac.filt) <- factor(Idents(atac.filt), levels = c("NPC", "GPC1", "GPC2", "GPC3", "GPC4"))
@@ -523,7 +523,7 @@ atacDimPlot
 atacDimPlot | covPlotFig
 
 
-ggsave("output/Figures/scATAC/tempCov.pdf", width = 8.5, height = 3.5, units = "in")
+#ggsave("output/Figures/scATAC/tempCov.pdf", width = 8.5, height = 3.5, units = "in")
 
 
 ```
@@ -532,7 +532,7 @@ ggsave("output/Figures/scATAC/tempCov.pdf", width = 8.5, height = 3.5, units = "
 
 (geneActivityHMFigATAC / expressionHMFigATAC / plot_spacer() / free(GPC4.consesus.scatter.Fig, type = "panel")) + plot_layout(heights = c(.3,.3,1,1.6))
 
-ggsave(filename = "output/Figures/scATAC/scATAC.pdf", width = 8.5, height = 11, units = "in")
+#ggsave(filename = "output/Figures/scATAC/scATAC.pdf", width = 8.5, height = 11, units = "in")
 
 
 
