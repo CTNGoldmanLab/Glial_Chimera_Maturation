@@ -167,6 +167,7 @@ top / middle
 ```{r}
 
 plot_long <- read.csv("output/CUT&Tag/plot_long.csv")
+plot_long <- plot_long[plot_long$Gene %in% plot_long[abs(plot_long$Value) > .8 & plot_long$Type == "RNA",]$Gene,]
 
 plot_long$Gene <- factor(plot_long$Gene, levels = unique(plot_long$Gene))
 plot_long$Type <- factor(plot_long$Type, levels = c("RNA", "K4me3_CTd120", "K4me3_CTd180", "K27ac_CTd120", "K27ac_CTd180", "K27me3_CTd120", "K27me3_CTd180"))
@@ -174,11 +175,12 @@ plot_long$Type <- factor(plot_long$Type, levels = c("RNA", "K4me3_CTd120", "K4me
 bottom <- ggplot(plot_long, aes(Gene, Type)) + 
   theme_manuscript() +
   geom_tile(aes(fill = Value), color = "black") + 
-  scale_fill_gradient2(low = "#2E30FF", mid = "white", high = "mediumseagreen", midpoint = 0, limits=c(-3,3), breaks=c(-2,-1,0,1,2), name="log2 fold change", na.value="black", oob = scales::squish, guide = guide_colorbar(barwidth = .5)) +
+  scale_fill_gradient2(low = "mediumseagreen", mid = "white", high = "#2E30FF", midpoint = 0, limits=c(-3,3), breaks=c(-2,-1,0,1,2), name="log2 fold change", na.value="black", oob = scales::squish, guide = guide_colorbar(barwidth = .5)) +
   scale_x_discrete(expand = c(0, 0), guide = guide_axis(angle = 90)) + scale_y_discrete(expand = c(0, 0)) +
   theme(axis.title = element_blank(), legend.title = element_blank())
 
 bottom
+
 
 ```
 

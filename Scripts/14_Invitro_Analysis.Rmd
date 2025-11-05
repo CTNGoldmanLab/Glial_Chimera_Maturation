@@ -1,17 +1,20 @@
 ---
-title: "Initial Analysis of Human Cells out of Shiverer Chimeras"
+title: "Analysis of Cultured hGPCs"
 author: "John Mariani"
-date: "12/6/2022"
+date: "10/26/2025"
 output: github_document
 ---
 
 ```{r setup, include=FALSE}
+
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
 ```
 
 
 ```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
 library(Seurat)
 library(scPlottingTools)
 library(ggplot2)
@@ -34,6 +37,7 @@ library(magrittr)
 library(viridis)
 library(tidyr)
 library(EnhancedVolcano)
+library(ggridges)
 
 `%not in%` <- function(x, table) is.na(match(x, table, nomatch = NA_integer_))
 
@@ -44,7 +48,8 @@ titleFont = 26
 tagSize = 26
 fig.pt.size = 2
 
-theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 
+# Because I have a newer function for this but didn't want to remake all the plots this time around to scale
+theme_manuscriptOG <-  theme(axis.text = element_text(size = axisTextSize), 
         axis.title = element_text(size = axisTitleSize), 
         title = element_text(size = titleFont), 
         legend.title = element_text(size = titleFont),
@@ -63,8 +68,7 @@ manuscriptPalette <- c("In Vivo" = "red2",
                        "maOL" = "darkorchid4")
 
 source("Scripts/HelperFunctions.R")
-
-
+source("Scripts/StyleSettings.R")
 
 
 ```
@@ -72,7 +76,7 @@ source("Scripts/HelperFunctions.R")
 
 
 ## Make invitro only subset
-```{r}
+```{r, warning=FALSE}
 
 invitroInvivo <- readRDS("output/RDS/invitroInvivo.rds")
 
@@ -90,7 +94,7 @@ invitroDE <- NormalizeData(invitroDE)
 ```
 
 ## Determine Gene Expresion Fractions and keep those that are present in 10% of any of the in vitro clusters
-```{r}
+```{r, warning=FALSE}
 
 expressionFractions <- DotPlot(invitroDE, assay = "RNA", features = row.names(invitro))$data
 names(expressionFractions)
@@ -182,7 +186,7 @@ expressionFractionsDF <- pivot_wider(data = expressionFractions, values_from = p
 
 ## Reload DE to save time
 
-```{r}
+```{r, warning=FALSE}
 
 invitroComparisons <- c("GPC4.vs.Rest", "NPC.vs.Rest", "GPC1.vs.Rest", "GPC2.vs.Rest", "GPC3.vs.Rest")
 
@@ -191,6 +195,8 @@ for(i in invitroComparisons){
   print(dim(temp))
   temp$comparison <- i
   temp <- temp[order(temp$logFC, decreasing = T),]
+  assign(i, temp)
+  temp <- temp[complete.cases(temp),]
   assign(paste0(i,".sig"), temp[temp$FDR < 0.01 & abs(temp$logFC) > .25,])
 }
 
@@ -200,7 +206,7 @@ for(i in invitroComparisons){
 
 
 ## Expression HM
-```{r}
+```{r, fig.height=12, fig.width=30, warning=FALSE}
 
 # How many top genes to show in heatmap
 howMany <- 11
@@ -223,7 +229,7 @@ allDE$sig <- symnum(allDE$FDR, cutpoints = c(0, 0.0001,
 
 allDE$sig <- ifelse(abs(allDE$logFC) < .25, " ", allDE$sig)
 
-expressionHMFig <- ggplot(allDE, aes(y = comparison, x = gene, fill = logFC)) + geom_tile(colour = "black") + scale_fill_gradient2(low = "dodgerblue2", mid = "white", high = "red2", midpoint = 0) + scale_y_discrete(expand = c(0,0)) +theme_bw() + theme_manuscript + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.key.height = unit(1, "inch")) + geom_text(aes(label = sig), angle = 90, vjust = 1, size = 12) + guides(fill=guide_colorbar(title="Log2FC Enrichment", title.position = "left", title.theme = element_text(angle = 90, hjust = .5)))
+expressionHMFig <- ggplot(allDE, aes(y = comparison, x = gene, fill = logFC)) + geom_tile(colour = "black") + scale_fill_gradient2(low = "dodgerblue2", mid = "white", high = "red2", midpoint = 0) + scale_y_discrete(expand = c(0,0)) +theme_bw() + theme_manuscriptOG + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.key.height = unit(1, "inch")) + geom_text(aes(label = sig), angle = 90, vjust = 1, size = 12) + guides(fill=guide_colorbar(title="Log2FC Enrichment", title.position = "left", title.theme = element_text(angle = 90, hjust = .5)))
 
 expressionHMFig
 
@@ -234,20 +240,20 @@ expressionHMFig
 
 
 ## Integrated Dim Plot
-```{r}
+```{r, warning=FALSE}
 
 dim(invitroInvivo)
 
-integratedDimFig <- DimPlotCustom(invitroInvivo, group.by = "cellType", label = T, pt.size = fig.pt.size) + theme_bw() + theme_manuscript + theme(legend.position = "bottom") + labs(title = "Integrated - 43,142 Cells") + scale_fill_manual(values = manuscriptPalette, aes(legend.title = "CellType")) + guides(fill = guide_legend(override.aes = list(size = 5)))
+integratedDimFig <- DimPlotCustom(invitroInvivo, group.by = "cellType", label = T, pt.size = fig.pt.size) + theme_bw() + theme_manuscriptOG + theme(legend.position = "bottom") + labs(title = "Integrated - 43,142 Cells") + scale_fill_manual(values = manuscriptPalette, aes(legend.title = "CellType")) + guides(fill = guide_legend(override.aes = list(size = 5)))
 
 integratedDimFig
 
 ```
 
 ## Dim Plot Split by stage
-```{r}
+```{r, warning=FALSE}
 
-stageDimFig <- DimPlotCustom(invitroInvivo, split.by = "stage", group.by = "cellType", ncol = 1, pt.size = fig.pt.size) & theme_bw() & theme_manuscript & NoLegend() & theme(axis.title.y = element_blank())  & scale_fill_manual(values = manuscriptPalette)
+stageDimFig <- DimPlotCustom(invitroInvivo, split.by = "stage", group.by = "cellType", ncol = 1, pt.size = fig.pt.size) & theme_bw() & theme_manuscriptOG & NoLegend() & theme(axis.title.y = element_blank())  & scale_fill_manual(values = manuscriptPalette)
 
 table(invitroInvivo$stage)
 
@@ -262,7 +268,7 @@ stageDimFig[[2]] | stageDimFig[[1]]
 ```
 
 ## Stacked Plot Cell Type by Stage
-```{r}
+```{r, warning=FALSE}
 
 StackedCellType <- as.data.frame(table(invitroInvivo$stage, invitroInvivo$cellType))
 
@@ -270,7 +276,7 @@ unique(StackedCellType$Var1)
 
 stackedPlotInvitroInvivo <- ggplot(StackedCellType, aes(fill = Var2, y = Freq, x = Var1))+
   geom_bar(position = "fill", stat = "identity")+
-  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscript + scale_y_continuous(expand = c(0,0))  + labs(y = "Fraction Celltype", x = "Stage", fill = "Cell Type") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)
+  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscriptOG + scale_y_continuous(expand = c(0,0))  + labs(y = "Fraction Celltype", x = "Stage", fill = "Cell Type") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)
 
 stackedPlotInvitroInvivo 
 
@@ -279,11 +285,11 @@ stackedPlotInvitroInvivo
 
 
 ## Violin Plots
-```{r}
+```{r, warning=FALSE}
 
 
-gpcViolins <- (VlnPlot(invitroDE, c("PDGFRA"), pt.size = 0) & coord_flip() & scale_fill_manual(values = manuscriptPalette)& scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscript & NoLegend() +  theme(axis.title.y = element_blank(), axis.title.x = element_blank())) /
-(VlnPlot(invitroDE, c("NEUROD1"), pt.size = .01) & coord_flip() & scale_fill_manual(values = manuscriptPalette) & scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscript & NoLegend() + theme(axis.title.y = element_blank()))
+gpcViolins <- (VlnPlot(invitroDE, c("PDGFRA"), pt.size = 0) & coord_flip() & scale_fill_manual(values = manuscriptPalette)& scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscriptOG & NoLegend() +  theme(axis.title.y = element_blank(), axis.title.x = element_blank())) /
+(VlnPlot(invitroDE, c("NEUROD1"), pt.size = .01) & coord_flip() & scale_fill_manual(values = manuscriptPalette) & scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscriptOG & NoLegend() + theme(axis.title.y = element_blank()))
 
 
 
@@ -292,7 +298,7 @@ gpcViolins <- (VlnPlot(invitroDE, c("PDGFRA"), pt.size = 0) & coord_flip() & sca
 
 
 ## Load in Palantir Data and update seurat metadata
-```{r}
+```{r, warning=FALSE}
 
 palantirMetadata <- read.csv("output/Palantir/palantirInvitroInvivoMetadata.csv", row.names = 1)
 palantirMetadata <- palantirMetadata[,c(14:21)]
@@ -331,7 +337,7 @@ invitroInvivo@meta.data <- invitroInvivoMeta
 ```
 
 
-```{r}
+```{r, warning=FALSE}
 
 
 xmin <- min(invitroInvivo@reductions$umap@cell.embeddings[,1])
@@ -343,7 +349,7 @@ ymax <- max(invitroInvivo@reductions$umap@cell.embeddings[,2])
 
 third <- (DimPlotCustom(subset(invitroInvivo, subset = Oligo_branch != "Unselected"), group.by = "Oligo_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("Oligodendrocyte Branch") & labs(tag = "G") | 
 DimPlotCustom(subset(invitroInvivo, subset = Astro_branch != "Unselected"), group.by = "Astro_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("Astrocyte Branch") & labs(tag = "I") |
-DimPlotCustom(subset(invitroInvivo, subset = NPC_branch != "Unselected"), group.by = "NPC_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("NPC Branch") & labs(tag = "K")) & theme_bw() & theme_manuscript & NoLegend() & xlim(xmin, xmax) & ylim(ymin, ymax)
+DimPlotCustom(subset(invitroInvivo, subset = NPC_branch != "Unselected"), group.by = "NPC_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("NPC Branch") & labs(tag = "K")) & theme_bw() & theme_manuscriptOG & NoLegend() & xlim(xmin, xmax) & ylim(ymin, ymax)
 
 third[[2]] <- third[[2]] & theme(axis.title.y = element_blank())
 
@@ -354,7 +360,7 @@ third
 
 ```
 
-```{r}
+```{r, warning=FALSE}
 
 levels(invitroInvivoMeta$Oligo_branch)
 
@@ -362,7 +368,7 @@ invitroInvivoMeta$Oligo_branch <- factor(invitroInvivoMeta$Oligo_branch, levels 
 
 bottom <- (ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$Oligo_bp, colour = invitroInvivoMeta$Oligo_branch, group = invitroInvivoMeta$Oligo_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "H") |
 ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$Astro_bp, colour = invitroInvivoMeta$Astro_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "J") | 
-ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$NPC_bp, colour = invitroInvivoMeta$NPC_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "L")) & theme_bw() & theme_manuscript & NoLegend() & labs(x = "Pseudotime", y = "Branch Probability")
+ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$NPC_bp, colour = invitroInvivoMeta$NPC_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "L")) & theme_bw() & theme_manuscriptOG & NoLegend() & labs(x = "Pseudotime", y = "Branch Probability")
 
 bottom[[2]] <- bottom[[2]] & theme(axis.title.y = element_blank())
 
@@ -375,7 +381,7 @@ bottom
 ```
 
 ## Piece together main figure
-```{r}
+```{r, fig.width = 30, fig.height = 40, warning=FALSE}
 
 integratedDimFig <- integratedDimFig + labs(tag = "A")
 stageDimFig[[2]] <- stageDimFig[[2]] + labs(tag = "B")
@@ -390,16 +396,16 @@ second <- (expressionHMFig + labs(tag = "F") + plot_spacer()) + plot_layout(widt
 
 (top / second / third / bottom) + plot_layout(heights = c(1,.5,1,.5))
 
-ggsave("output/Figures/Invitro/invitroFig.pdf", width = 30, height = 40)
+#ggsave("output/Figures/Invitro/invitroFig.pdf", width = 30, height = 40)
 
 
 ```
 # Supplementary Plots
 
 ## Leiden Cluster plot
-```{r}
+```{r, warning=FALSE}
 
-dimLeidenFig <- DimPlotCustom(invitroInvivo, group.by = "leiden_clusters", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscript & NoLegend()  & ggtitle("In Vitro and In Vivo Leiden Clusters")
+dimLeidenFig <- DimPlotCustom(invitroInvivo, group.by = "leiden_clusters", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscriptOG & NoLegend()  & ggtitle("In Vitro and In Vivo Leiden Clusters")
 
 dimLeidenFig
 
@@ -409,9 +415,9 @@ dimLeidenFig
 
 ## Split by line dim plot
 
-```{r}
+```{r, warning=FALSE}
 
-dimLineFig <- DimPlotCustom(invitro, split.by = "line", group.by = "cellType", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscript & NoLegend() & theme(axis.title.y = element_blank()) & scale_fill_manual(values = manuscriptPalette)
+dimLineFig <- DimPlotCustom(invitro, split.by = "line", group.by = "cellType", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscriptOG & NoLegend() & theme(axis.title.y = element_blank()) & scale_fill_manual(values = manuscriptPalette)
 
 dimLineFig
 
@@ -429,7 +435,7 @@ dimLineFig
 
 
 ## Sort
-```{r}
+```{r, warning=FALSE}
 
 StackedSort <- as.data.frame(table(invitro$sort, invitro$cellType))
 StackedSort$Var1 <- relevel(StackedSort$Var1, "DAPI-")
@@ -438,7 +444,7 @@ unique(StackedSort$Var1)
 
 StackedSortPlot <- ggplot(StackedSort, aes(fill = Var2, y = Freq, x = Var1))+
   geom_bar(position = "fill", stat = "identity")+
-  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscript + scale_y_continuous(expand = c(0,0)) + ylab("Percent Identity") + labs(y = "Percent", x = "Stage", fill = "Cell Type", tag = "C") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)  & ggtitle("Sort Cell Type Fractions")
+  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscriptOG + scale_y_continuous(expand = c(0,0)) + ylab("Percent Identity") + labs(y = "Percent", x = "Stage", fill = "Cell Type", tag = "C") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)  & ggtitle("Sort Cell Type Fractions")
 
 StackedSortPlot
 
@@ -446,7 +452,7 @@ StackedSortPlot
 
 ## Cell Cycle Scoring
 
-```{r}
+```{r, warning=FALSE}
 
 s.genes <- cc.genes$s.genes
 g2m.genes <- cc.genes$g2m.genes
@@ -465,7 +471,7 @@ DimPlotCustom(invitro, split.by = "Phase", label = T, group.by = "cellType")
 
 
 
-cellCycleVlnGG <- VlnPlot(invitro, c("G2M.Score", "S.Score"), pt.size = 0, idents = c("NPC", "GPC1", "GPC2", "GPC3", "GPC4")) & theme_bw() & theme_manuscript & NoLegend() & theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+cellCycleVlnGG <- VlnPlot(invitro, c("G2M.Score", "S.Score"), pt.size = 0, idents = c("NPC", "GPC1", "GPC2", "GPC3", "GPC4")) & theme_bw() & theme_manuscriptOG & NoLegend() & theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 cellCycleVlnGG[[1]] <- cellCycleVlnGG[[1]] + ggtitle("G2M Phase Score")
 cellCycleVlnGG[[2]] <- cellCycleVlnGG[[2]] + ggtitle("S Phase Score")
@@ -477,7 +483,7 @@ color0 = "grey60"
 colPalette = c("dodgerblue2", 
         "gold", "red2")
 
-cellCycleFeatureGG <- FeaturePlot(invitro, c("G2M.Score", "S.Score"), order = T, pt.size = fig.pt.size) & scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) & theme_bw() & theme_manuscript & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch")) & xlab("UMAP 1") & ylab("UMAP 2")
+cellCycleFeatureGG <- FeaturePlot(invitro, c("G2M.Score", "S.Score"), order = T, pt.size = fig.pt.size) & scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) & theme_bw() & theme_manuscriptOG & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch")) & xlab("UMAP 1") & ylab("UMAP 2")
 
 cellCycleFeatureGG[[1]] <- cellCycleFeatureGG[[1]] + ggtitle ("G2M Phase Score")
 cellCycleFeatureGG[[2]] <- cellCycleFeatureGG[[2]] + ggtitle ("S Phase Score")
@@ -488,9 +494,9 @@ cellCycleFeatureGG
 ```
 
 ## Mature NPC Feature Plots
-```{r}
+```{r, warning=FALSE}
 
-npcFeaturePlots <- FeaturePlotCustom(invitro, c("SYT1", "MEIS2", "BCL11B"), plotLegend = "shared", pt.size = fig.pt.size)   & theme_bw() & theme_manuscript & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch"))
+npcFeaturePlots <- FeaturePlotCustom(invitro, c("SYT1", "MEIS2", "BCL11B"), plotLegend = "shared", pt.size = fig.pt.size)   & theme_bw() & theme_manuscriptOG & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch"))
 
 npcFeaturePlots[[1]] <- npcFeaturePlots[[1]] + ylab("UMAP 2")
 npcFeaturePlots <- npcFeaturePlots & xlab("UMAP 1")
@@ -499,8 +505,12 @@ npcFeaturePlots
 
 ```
 
+
+
+
+
 ## Supplemental Figure
-```{r}
+```{r, fig.width = 30, fig.height = 40, warning=FALSE}
 
 dimLeidenFig <- dimLeidenFig + labs(tag = "A")
 dimLineFig[[1]] <- dimLineFig[[1]] + labs(tag = "B")
@@ -519,9 +529,125 @@ bottom <- npcFeaturePlots
 
 top / middle / bottom
 
-ggsave("output/Figures/Invitro/invitroSuppFig.pdf", width = 30, height = 40)
+#ggsave("output/Figures/Invitro/invitroSuppFig.pdf", width = 30, height = 40)
 
 
+
+```
+## Specificity Analysis
+```{r, warning=FALSE}
+
+invivo <- subset(invitroInvivo, subset = stage == "In Vivo")
+invivo <- subset(invivo, subset = cellType %in% c("GPC4", "imOL", "maOL", "Astrocyte"))
+
+GPC4expression <- DotPlot(invitroDE, features = GPC4.vs.Rest.sig[GPC4.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC4expressionWide <- pivot_wider(GPC4expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC4expressionWide$spec.GPC4 <- GPC4expressionWide$GPC4 / rowSums(GPC4expressionWide[,2:6])
+GPC4expressionWide <- GPC4expressionWide[order(GPC4expressionWide$spec.GPC4, decreasing = T),]
+GPC4expressionWide$group <- "GPC4"
+
+GPC3expression <- DotPlot(invitroDE, features = GPC3.vs.Rest.sig[GPC3.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC3expressionWide <- pivot_wider(GPC3expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC3expressionWide$spec.GPC3 <- GPC3expressionWide$GPC3 / rowSums(GPC3expressionWide[,2:6])
+GPC3expressionWide <- GPC3expressionWide[order(GPC3expressionWide$spec.GPC3, decreasing = T),]
+GPC3expressionWide$group <- "GPC3"
+
+GPC2expression <- DotPlot(invitroDE, features = GPC2.vs.Rest.sig[GPC2.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC2expressionWide <- pivot_wider(GPC2expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC2expressionWide$spec.GPC2 <- GPC2expressionWide$GPC2 / rowSums(GPC2expressionWide[,2:6])
+GPC2expressionWide <- GPC2expressionWide[order(GPC2expressionWide$spec.GPC2, decreasing = T),]
+GPC2expressionWide$group <- "GPC2"
+
+GPC1expression <- DotPlot(invitroDE, features = GPC1.vs.Rest.sig[GPC1.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC1expressionWide <- pivot_wider(GPC1expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC1expressionWide$spec.GPC1 <- GPC1expressionWide$GPC1 / rowSums(GPC1expressionWide[,2:6])
+GPC1expressionWide <- GPC1expressionWide[order(GPC1expressionWide$spec.GPC1, decreasing = T),]
+GPC1expressionWide$group <- "GPC1"
+
+NPCexpression <- DotPlot(invitroDE, features = NPC.vs.Rest.sig[NPC.vs.Rest.sig$logFC > 0,]$gene)$data
+NPCexpressionWide <- pivot_wider(NPCexpression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+NPCexpressionWide$spec.NPC <- NPCexpressionWide$NPC / rowSums(NPCexpressionWide[,2:6])
+NPCexpressionWide <- NPCexpressionWide[order(NPCexpressionWide$spec.NPC, decreasing = T),]
+NPCexpressionWide$group <- "NPC"
+
+new_names <- c("Gene", "Specificity", "Population") 
+allSpecificity <- bind_rows(
+  GPC4expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  GPC3expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  GPC2expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  GPC1expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  NPCexpressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+)
+
+allSpecificity$Population <- factor(allSpecificity$Population, levels = rev(c("NPC", "GPC1", "GPC2", "GPC3", "GPC4")))
+
+write.csv(allSpecificity, "output/DE/invitroSpecificity.csv", quote = F, row.names = F)
+
+
+```
+
+## Ridge Plot
+```{r, warning=FALSE}
+
+fig.ridgePlot <- ggplot(allSpecificity, aes(x = Specificity, y = Population, fill = Population)) + 
+  geom_density_ridges(alpha = 1) + 
+  scale_fill_manual(values = manuscriptPalette) + 
+  labs(
+    title = 'Density of Cell Population Specificity Scores',
+    x = 'Cell Population Specificity', tag = "H") +
+  theme_manuscript() + geom_point(shape = 21, fill = "white", colour = "black", stroke = .5, size = 2) + geom_vline(xintercept = .7) + theme(legend.position = "none", axis.title.y = element_blank()) 
+
+fig.ridgePlot
+
+
+```
+
+
+```{r, warning=FALSE}
+
+invitroDE$label <- paste0("In Vitro ", invitroDE$cellType)
+invivo$label <- paste0("In Vivo ", invivo$cellType)
+
+dotplotSeurat <- merge(invitroDE, invivo)
+dotplotSeurat$label <- factor(dotplotSeurat$label, levels = rev(c("In Vitro NPC", "In Vitro GPC1", "In Vitro GPC2",
+                                                              "In Vitro GPC3", "In Vitro GPC4", "In Vivo GPC4",
+                                                              "In Vivo imOL", "In Vivo maOL", "In Vivo Astrocyte")))
+
+specificExpression <- DotPlot(dotplotSeurat, group.by = "label", features = allSpecificity[allSpecificity$Specificity > .7,]$Gene)$data
+
+
+fig.MarkerDotPlot <- ggplot(specificExpression[specificExpression$id %not in% c("In Vivo imOL", "In Vivo maOL"),], aes(size = pct.exp, fill = avg.exp.scaled, y = id, x = features.plot)) + 
+  geom_point(color = "black", pch = 21) + 
+  scale_size_area(max_size = 5) + 
+  scale_fill_gradientn(colors = PurpleAndYellow()) + 
+  theme_bw() + 
+  theme_manuscript() +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom") +
+  guides(fill = guide_colorbar(title.position = "bottom", title.theme = element_text(size = baseSize*axisTitleSize), barwidth = 5, barheight = .5), 
+         size = guide_legend(title.position = "bottom", title.theme = element_text(size = baseSize*axisTitleSize))) +
+  labs(tag = "I", title = "High Subpopulation Specificity Gene Expression", size = "% Expressed", fill = "Scaled Expression") 
+
+fig.MarkerDotPlot
+
+bottomS2 <- free(fig.ridgePlot) | fig.MarkerDotPlot
+
+bottomS2
+
+#ggsave(bottomS2, file = "output/Figures/Invitro/bottomS2.pdf", width = 11, height = 5, units = "in")
 
 ```
 

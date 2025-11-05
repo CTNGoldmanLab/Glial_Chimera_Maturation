@@ -1,5 +1,5 @@
 ---
-title: "Initial Analysis of Human Cells out of Shiverer Chimeras"
+title: "Initial Analysis of Cultured hGPCs and Human Cells out of Shiverer Chimeras"
 author: "John Mariani"
 date: "12/6/2022"
 output: github_document

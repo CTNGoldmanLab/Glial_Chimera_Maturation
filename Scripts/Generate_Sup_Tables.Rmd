@@ -18,6 +18,8 @@ library(xlsx)
 library(data.table)
 library(tidyverse)
 
+source("Scripts/HelperFunctions.R")
+
 ```
 
 ## Sup Table 1A GPC vs PSC DE
@@ -116,6 +118,16 @@ for(i in invitroComparisons){
 }
 
 
+
+
+
+```
+## In Vitro Specificty Scores
+```{r}
+
+invitroSpecificity <- read.csv("output/DE/invitroSpecificity.csv")
+
+write.xlsx(invitroSpecificity, file = "output/SupTables/SupTable2.xlsx", sheetName = "Specificity Scores", row.names = F, append = T)
 
 
 
@@ -487,19 +499,18 @@ invitro.GPC.consensus <- invitro.GPC.consensus[invitro.GPC.consensus$logFC.x* in
 ## Filter for genes that were not significant but whose gene activities were in vitro
 invitro.GPC4.atacOnly <- atac.sig[atac.sig$feature %not in% invitro.GPC4.enrichment$gene,]
 
-invivo.invitro.consensus <- merge(Invivo.vs.Invitro.GPC4.sig, invitro.GPC.consensus, by.x = "gene", by.y = 1)
-invivo.invitro.consensus <- invivo.invitro.consensus[,c(1,3,4,7,9,11,15,16)]
+invivo.invitro.consensus <- merge(Invivo.vs.Invitro.GPC4.sig, invitro.GPC.consensus, by.x = "Gene", by.y = 1)
+invivo.invitro.consensus <- invivo.invitro.consensus[,c(1,2,3,6,8,10,14,15)]
 names(invivo.invitro.consensus)
 names(invivo.invitro.consensus) <- c("Gene", "In vivo vs in vitro GPC4 scRNA FDR", "In vivo vs In vitro GPC4 scRNA Log2FC", "In vitro GPC4 scATAC gene activity enrichment Log2FC", "In vitro GPC4 scATAC gene activity enrichment AUC", "In vitro GPC4 scATAC gene activity enrichment FDR", "In vitro GPC4 scRNA enrichment FDR", "In vitro GPC4 scRNA enrichment Log2FC")
 
 invivo.invitro.consensus <- invivo.invitro.consensus[order(invivo.invitro.consensus$`In vivo vs In vitro GPC4 scRNA Log2FC`, decreasing = T),]
 
-write.xlsx(invivo.invitro.consensus, file = "output/SupTables/SupTable8.xlsx", sheetName = "In vivo vs in vitro scATAC Consensus", append = T, row.names = F) 
+write.xlsx(invivo.invitro.consensus, file = "output/SupTables/SupTable4.xlsx", sheetName = "In vivo vs in vitro scATAC Consensus", append = T, row.names = F) 
 
-names(invivo.invitro.primed)
 
-invivo.invitro.primed <- merge(Invivo.vs.Invitro.GPC4.sig, invitro.GPC4.atacOnly, by.x = "gene", by.y = 1)
-invivo.invitro.primed <- invivo.invitro.primed[,c(1,3,4,7,9,11)]
+invivo.invitro.primed <- merge(Invivo.vs.Invitro.GPC4.sig, invitro.GPC4.atacOnly, by.x = "Gene", by.y = 1)
+invivo.invitro.primed <- invivo.invitro.primed[,c(1,2,3,6,8,10)]
 
 names(invivo.invitro.primed)
 
@@ -507,7 +518,7 @@ names(invivo.invitro.primed) <- c("Gene", "In vivo vs in vitro GPC4 scRNA FDR", 
 
 invivo.invitro.primed <- invivo.invitro.primed[order(invivo.invitro.primed$`In vitro GPC4 scATAC gene activity enrichment Log2FC`, decreasing = T),]
 
-write.xlsx(invivo.invitro.primed, file = "output/SupTables/SupTable8.xlsx", sheetName = "In vivo vs in vitro scATAC Primed", append = T, row.names = F) 
+write.xlsx(invivo.invitro.primed, file = "output/SupTables/SupTable4.xlsx", sheetName = "In vivo vs in vitro scATAC Primed", append = T, row.names = F) 
 
 
 

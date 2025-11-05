@@ -62,8 +62,8 @@ DEgene_plot <- ALLgene_plot[ALLgene_plot$RNA_FDR<0.01 & (ALLgene_plot$RNA_Log2FC
 #write up and down-regulated genes separately to output for plotting genomic coverage of the three histone marks
 ###
 out <- DEgene_plot
-write.table(out[out$RNA_Log2FC > cutoff, c("Gene","RNA_Log2FC")], file = paste0(ofolder, "/GPC.vs.PSC.GeneList.filter_PCT0.3_expr0.3_log2FC", cutoff, "_up.txt"), sep = "\t", quote = F, row.names = F, col.names = F)
-write.table(out[out$RNA_Log2FC < (-cutoff), c("Gene","RNA_Log2FC")], file = paste0(ofolder, "/GPC.vs.PSC.GeneList.filter_PCT0.3_expr0.3_log2FC", cutoff, "_down.txt"), sep = "\t", quote = F, row.names = F, col.names = F)
+#write.table(out[out$RNA_Log2FC > cutoff, c("Gene","RNA_Log2FC")], file = paste0(ofolder, "/GPC.vs.PSC.GeneList.filter_PCT0.3_expr0.3_log2FC", cutoff, "_up.txt"), sep = "\t", quote = F, row.names = F, col.names = F)
+#write.table(out[out$RNA_Log2FC < (-cutoff), c("Gene","RNA_Log2FC")], file = paste0(ofolder, "/GPC.vs.PSC.GeneList.filter_PCT0.3_expr0.3_log2FC", cutoff, "_down.txt"), sep = "\t", quote = F, row.names = F, col.names = F)
 ```
 
 ### 
@@ -143,7 +143,7 @@ colnames(associationGene) <- c("GHid", "Gene")
 peakAnnot_plot <- inner_join(peakAnnot_uniq, associationGene, by="GHid", relationship = "one-to-many")
 
 #collapses genes with multiple peaks by average
-peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
 peakAnnot_plot4 <- peakAnnot_plot_uniq
 colnames(peakAnnot_plot4) <- c("Gene", "K27ac_enhacner")
 
@@ -231,7 +231,7 @@ colnames(associationGene) <- c("GHid", "Gene")
 peakAnnot_plot <- inner_join(peakAnnot_uniq, associationGene, by="GHid", relationship = "one-to-many")
 
 #collapses genes with multiple peaks by average
-peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
+peakAnnot_plot_uniq <- peakAnnot_plot %>% group_by(Gene) %>% dplyr::summarize("HistoneMark_log2FC"=mean(HistoneMark_log2FC))
 peakAnnot_plot4 <- peakAnnot_plot_uniq
 colnames(peakAnnot_plot4) <- c("Gene", "K27ac_enhacner")
 
@@ -866,7 +866,7 @@ plot_long$Gene <- factor(plot_long$Gene, levels = rev(geneOrder))
 
 i <- length(unique(plot_long$Gene))
 
-write.csv(plot_long, "output/CUT&Tag/plot_long.csv", quote = F, row.names = F)
+#write.csv(plot_long, "output/CUT&Tag/plot_long.csv", quote = F, row.names = F)
 
 #plot
 ggplot(plot_long, aes(Gene, Type)) + 
@@ -883,7 +883,7 @@ ggplot(plot_long, aes(Gene, Type)) +
 
 ``` r
 #Save for later reconstruction
-write.csv(plot_long, file = "output/CUT&Tag/plot_long.csv", row.names = F, quote = F)
+#write.csv(plot_long, file = "output/CUT&Tag/plot_long.csv", row.names = F, quote = F)
 ```
 
 ### plot CTd120 data by itself
@@ -1051,7 +1051,7 @@ sessionInfo()
     ##  [1] VennDiagram_1.7.3   futile.logger_1.4.3 pheatmap_1.0.12    
     ##  [4] RColorBrewer_1.1-3  ggrepel_0.9.3       lubridate_1.9.2    
     ##  [7] forcats_1.0.0       purrr_1.0.1         readr_2.1.4        
-    ## [10] tibble_3.2.1        ggplot2_3.4.4       tidyverse_2.0.0    
+    ## [10] tibble_3.2.1        ggplot2_3.5.2       tidyverse_2.0.0    
     ## [13] stringr_1.5.0       tidyr_1.3.0         dplyr_1.1.1        
     ## 
     ## loaded via a namespace (and not attached):

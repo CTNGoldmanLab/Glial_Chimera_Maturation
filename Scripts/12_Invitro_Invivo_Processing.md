@@ -1,4 +1,4 @@
-Initial Analysis of Human Cells out of Shiverer Chimeras
+Initial Analysis of Cultured hGPCs and Human Cells out of Shiverer Chimeras
 ================
 John Mariani
 12/6/2022
@@ -285,3 +285,4 @@ sessionInfo()
     ## [142] bit_4.0.5              stringi_1.7.12         profvis_0.3.7         
     ## [145] blob_1.2.4             memoise_2.0.1          irlba_2.3.5.1         
     ## [148] future.apply_1.10.0
+ 

@@ -12,7 +12,8 @@ manuscriptPalette <- c("In Vivo" = "red2",
                        "GPC" = "turquoise",
                        "imAstrocyte" = "firebrick2",
                        "cGPC" = "darkorange",
-                       "cAPC" = "forestgreen")
+                       "cAPC" = "forestgreen",
+                       "Mouse" = "grey95")
 
 # 
 # theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 

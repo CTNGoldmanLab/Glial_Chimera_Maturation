@@ -61,6 +61,8 @@ data_for_import/scATAC
 data_for_import/NicheNet
 data_for_import/CUT&Tag/bam
 data_for_import/CUT&Tag/peak
+data_for_import/Xenium
+data_for_import/External
 
 output/SupTables
 output/DE
@@ -73,6 +75,7 @@ output/SCENIC
 output/Palantir
 output/CUT&Tag
 output/H5AD
+output/Xenium
 
 
 ## Even More

@@ -1,7 +1,7 @@
-Initial Analysis of Human Cells out of Shiverer Chimeras
+Analysis of Cultured hGPCs
 ================
 John Mariani
-12/6/2022
+10/26/2025
 
 ``` r
 library(Seurat)
@@ -26,6 +26,7 @@ library(magrittr)
 library(viridis)
 library(tidyr)
 library(EnhancedVolcano)
+library(ggridges)
 
 `%not in%` <- function(x, table) is.na(match(x, table, nomatch = NA_integer_))
 
@@ -36,7 +37,8 @@ titleFont = 26
 tagSize = 26
 fig.pt.size = 2
 
-theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 
+# Because I have a newer function for this but didn't want to remake all the plots this time around to scale
+theme_manuscriptOG <-  theme(axis.text = element_text(size = axisTextSize), 
         axis.title = element_text(size = axisTitleSize), 
         title = element_text(size = titleFont), 
         legend.title = element_text(size = titleFont),
@@ -55,6 +57,7 @@ manuscriptPalette <- c("In Vivo" = "red2",
                        "maOL" = "darkorchid4")
 
 source("Scripts/HelperFunctions.R")
+source("Scripts/StyleSettings.R")
 ```
 
 ## Make invitro only subset
@@ -77,18 +80,14 @@ DimPlot(invitroDE, split.by = "cellType")
 
 ![](14_Invitro_Analysis_files/figure-gfm/unnamed-chunk-2-2.png)<!-- -->
 
+``` r
+invitroDE <- NormalizeData(invitroDE)
+```
+
 ## Determine Gene Expresion Fractions and keep those that are present in 10% of any of the in vitro clusters
 
 ``` r
-invitroDE <- subset(invitro, subset = cellType %in% c("NPC", "GPC1", "GPC2", "GPC3", "GPC4"))
-
 expressionFractions <- DotPlot(invitroDE, assay = "RNA", features = row.names(invitro))$data
-```
-
-    ## Warning in asMethod(object): sparse->dense coercion: allocating vector of size
-    ## 11.1 GiB
-
-``` r
 names(expressionFractions)
 ```
 
@@ -183,25 +182,17 @@ for(i in invitroComparisons){
   print(dim(temp))
   temp$comparison <- i
   temp <- temp[order(temp$logFC, decreasing = T),]
-  assign(paste0(i,".sig"), temp[temp$FDR < 0.01 & abs(temp$logFC) > .25,])
-}
-```
-
-    ## [1] 11687     4
-    ## [1] 11687     4
-    ## [1] 11687     4
-    ## [1] 11687     4
-    ## [1] 11687     4
-
-``` r
-for(i in invitroComparisons){
-  temp <- read.delim(paste0("output/DE/",i,".txt"))
-  temp$comparison <- i
-  temp <- temp[order(temp$logFC, decreasing = T),]
   assign(i, temp)
+  temp <- temp[complete.cases(temp),]
   assign(paste0(i,".sig"), temp[temp$FDR < 0.01 & abs(temp$logFC) > .25,])
 }
 ```
+
+    ## [1] 11687     4
+    ## [1] 11687     4
+    ## [1] 11687     4
+    ## [1] 11687     4
+    ## [1] 11687     4
 
 ## Expression HM
 
@@ -227,7 +218,7 @@ allDE$sig <- symnum(allDE$FDR, cutpoints = c(0, 0.0001,
 
 allDE$sig <- ifelse(abs(allDE$logFC) < .25, " ", allDE$sig)
 
-expressionHMFig <- ggplot(allDE, aes(y = comparison, x = gene, fill = logFC)) + geom_tile(colour = "black") + scale_fill_gradient2(low = "dodgerblue2", mid = "white", high = "red2", midpoint = 0) + scale_y_discrete(expand = c(0,0)) +theme_bw() + theme_manuscript + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.key.height = unit(1, "inch")) + geom_text(aes(label = sig), angle = 90, vjust = 1, size = 12) + guides(fill=guide_colorbar(title="Log2FC Enrichment", title.position = "left", title.theme = element_text(angle = 90, hjust = .5)))
+expressionHMFig <- ggplot(allDE, aes(y = comparison, x = gene, fill = logFC)) + geom_tile(colour = "black") + scale_fill_gradient2(low = "dodgerblue2", mid = "white", high = "red2", midpoint = 0) + scale_y_discrete(expand = c(0,0)) +theme_bw() + theme_manuscriptOG + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.key.height = unit(1, "inch")) + geom_text(aes(label = sig), angle = 90, vjust = 1, size = 12) + guides(fill=guide_colorbar(title="Log2FC Enrichment", title.position = "left", title.theme = element_text(angle = 90, hjust = .5)))
 
 expressionHMFig
 ```
@@ -243,7 +234,7 @@ dim(invitroInvivo)
     ## [1] 39605 43142
 
 ``` r
-integratedDimFig <- DimPlotCustom(invitroInvivo, group.by = "cellType", label = T, pt.size = fig.pt.size) + theme_bw() + theme_manuscript + theme(legend.position = "bottom") + labs(title = "Integrated - 43,142 Cells") + scale_fill_manual(values = manuscriptPalette, aes(legend.title = "CellType")) + guides(fill = guide_legend(override.aes = list(size = 5)))
+integratedDimFig <- DimPlotCustom(invitroInvivo, group.by = "cellType", label = T, pt.size = fig.pt.size) + theme_bw() + theme_manuscriptOG + theme(legend.position = "bottom") + labs(title = "Integrated - 43,142 Cells") + scale_fill_manual(values = manuscriptPalette, aes(legend.title = "CellType")) + guides(fill = guide_legend(override.aes = list(size = 5)))
 
 integratedDimFig
 ```
@@ -253,7 +244,7 @@ integratedDimFig
 ## Dim Plot Split by stage
 
 ``` r
-stageDimFig <- DimPlotCustom(invitroInvivo, split.by = "stage", group.by = "cellType", ncol = 1, pt.size = fig.pt.size) & theme_bw() & theme_manuscript & NoLegend() & theme(axis.title.y = element_blank())  & scale_fill_manual(values = manuscriptPalette)
+stageDimFig <- DimPlotCustom(invitroInvivo, split.by = "stage", group.by = "cellType", ncol = 1, pt.size = fig.pt.size) & theme_bw() & theme_manuscriptOG & NoLegend() & theme(axis.title.y = element_blank())  & scale_fill_manual(values = manuscriptPalette)
 
 table(invitroInvivo$stage)
 ```
@@ -290,7 +281,7 @@ unique(StackedCellType$Var1)
 ``` r
 stackedPlotInvitroInvivo <- ggplot(StackedCellType, aes(fill = Var2, y = Freq, x = Var1))+
   geom_bar(position = "fill", stat = "identity")+
-  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscript + scale_y_continuous(expand = c(0,0))  + labs(y = "Fraction Celltype", x = "Stage", fill = "Cell Type") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)
+  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscriptOG + scale_y_continuous(expand = c(0,0))  + labs(y = "Fraction Celltype", x = "Stage", fill = "Cell Type") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)
 
 stackedPlotInvitroInvivo 
 ```
@@ -300,8 +291,8 @@ stackedPlotInvitroInvivo
 ## Violin Plots
 
 ``` r
-gpcViolins <- (VlnPlot(invitroDE, c("PDGFRA"), pt.size = 0) & coord_flip() & scale_fill_manual(values = manuscriptPalette)& scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscript & NoLegend() +  theme(axis.title.y = element_blank(), axis.title.x = element_blank())) /
-(VlnPlot(invitroDE, c("NEUROD1"), pt.size = .01) & coord_flip() & scale_fill_manual(values = manuscriptPalette) & scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscript & NoLegend() + theme(axis.title.y = element_blank()))
+gpcViolins <- (VlnPlot(invitroDE, c("PDGFRA"), pt.size = 0) & coord_flip() & scale_fill_manual(values = manuscriptPalette)& scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscriptOG & NoLegend() +  theme(axis.title.y = element_blank(), axis.title.x = element_blank())) /
+(VlnPlot(invitroDE, c("NEUROD1"), pt.size = .01) & coord_flip() & scale_fill_manual(values = manuscriptPalette) & scale_y_continuous(expand = c(0,0), limits = c(0,3.75)) & theme_bw() & theme_manuscriptOG & NoLegend() + theme(axis.title.y = element_blank()))
 ```
 
     ## Scale for y is already present.
@@ -367,7 +358,7 @@ ymax <- max(invitroInvivo@reductions$umap@cell.embeddings[,2])
 
 third <- (DimPlotCustom(subset(invitroInvivo, subset = Oligo_branch != "Unselected"), group.by = "Oligo_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("Oligodendrocyte Branch") & labs(tag = "G") | 
 DimPlotCustom(subset(invitroInvivo, subset = Astro_branch != "Unselected"), group.by = "Astro_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("Astrocyte Branch") & labs(tag = "I") |
-DimPlotCustom(subset(invitroInvivo, subset = NPC_branch != "Unselected"), group.by = "NPC_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("NPC Branch") & labs(tag = "K")) & theme_bw() & theme_manuscript & NoLegend() & xlim(xmin, xmax) & ylim(ymin, ymax)
+DimPlotCustom(subset(invitroInvivo, subset = NPC_branch != "Unselected"), group.by = "NPC_branch", label = T, pt.size = fig.pt.size) & scale_fill_manual(values = manuscriptPalette) & ggtitle("NPC Branch") & labs(tag = "K")) & theme_bw() & theme_manuscriptOG & NoLegend() & xlim(xmin, xmax) & ylim(ymin, ymax)
 ```
 
     ## Scale for x is already present.
@@ -405,7 +396,7 @@ invitroInvivoMeta$Oligo_branch <- factor(invitroInvivoMeta$Oligo_branch, levels 
 
 bottom <- (ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$Oligo_bp, colour = invitroInvivoMeta$Oligo_branch, group = invitroInvivoMeta$Oligo_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "H") |
 ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$Astro_bp, colour = invitroInvivoMeta$Astro_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "J") | 
-ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$NPC_bp, colour = invitroInvivoMeta$NPC_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "L")) & theme_bw() & theme_manuscript & NoLegend() & labs(x = "Pseudotime", y = "Branch Probability")
+ggplot(invitroInvivoMeta, aes(x = invitroInvivoMeta$palantir_pseudotime, y = invitroInvivoMeta$NPC_bp, colour = invitroInvivoMeta$NPC_branch)) + geom_point(size = 3) + scale_color_manual(values = manuscriptPalette) & labs(tag = "L")) & theme_bw() & theme_manuscriptOG & NoLegend() & labs(x = "Pseudotime", y = "Branch Probability")
 
 bottom[[2]] <- bottom[[2]] & theme(axis.title.y = element_blank())
 
@@ -433,30 +424,18 @@ second <- (expressionHMFig + labs(tag = "F") + plot_spacer()) + plot_layout(widt
 (top / second / third / bottom) + plot_layout(heights = c(1,.5,1,.5))
 ```
 
-    ## Warning: Removed 17030 rows containing non-finite values (`stat_ydensity()`).
-
-    ## Warning: Removed 18766 rows containing non-finite values (`stat_ydensity()`).
-
-    ## Warning: Removed 18766 rows containing missing values (`geom_point()`).
-
 ![](14_Invitro_Analysis_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
 
 ``` r
-ggsave("output/Figures/Invitro/invitroFig.pdf", width = 30, height = 40)
+#ggsave("output/Figures/Invitro/invitroFig.pdf", width = 30, height = 40)
 ```
-
-    ## Warning: Removed 17030 rows containing non-finite values (`stat_ydensity()`).
-
-    ## Warning: Removed 18766 rows containing non-finite values (`stat_ydensity()`).
-
-    ## Warning: Removed 18766 rows containing missing values (`geom_point()`).
 
 # Supplementary Plots
 
 ## Leiden Cluster plot
 
 ``` r
-dimLeidenFig <- DimPlotCustom(invitroInvivo, group.by = "leiden_clusters", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscript & NoLegend()  & ggtitle("In Vitro and In Vivo Leiden Clusters")
+dimLeidenFig <- DimPlotCustom(invitroInvivo, group.by = "leiden_clusters", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscriptOG & NoLegend()  & ggtitle("In Vitro and In Vivo Leiden Clusters")
 
 dimLeidenFig
 ```
@@ -466,7 +445,7 @@ dimLeidenFig
 ## Split by line dim plot
 
 ``` r
-dimLineFig <- DimPlotCustom(invitro, split.by = "line", group.by = "cellType", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscript & NoLegend() & theme(axis.title.y = element_blank()) & scale_fill_manual(values = manuscriptPalette)
+dimLineFig <- DimPlotCustom(invitro, split.by = "line", group.by = "cellType", ncol = 1, pt.size = fig.pt.size, label = T) & theme_bw() & theme_manuscriptOG & NoLegend() & theme(axis.title.y = element_blank()) & scale_fill_manual(values = manuscriptPalette)
 
 dimLineFig
 ```
@@ -504,7 +483,7 @@ unique(StackedSort$Var1)
 ``` r
 StackedSortPlot <- ggplot(StackedSort, aes(fill = Var2, y = Freq, x = Var1))+
   geom_bar(position = "fill", stat = "identity")+
-  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscript + scale_y_continuous(expand = c(0,0)) + ylab("Percent Identity") + labs(y = "Percent", x = "Stage", fill = "Cell Type", tag = "C") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)  & ggtitle("Sort Cell Type Fractions")
+  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscriptOG + scale_y_continuous(expand = c(0,0)) + ylab("Percent Identity") + labs(y = "Percent", x = "Stage", fill = "Cell Type", tag = "C") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)  & ggtitle("Sort Cell Type Fractions")
 
 StackedSortPlot
 ```
@@ -542,7 +521,7 @@ DimPlotCustom(invitro, split.by = "Phase", label = T, group.by = "cellType")
 ![](14_Invitro_Analysis_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
 
 ``` r
-cellCycleVlnGG <- VlnPlot(invitro, c("G2M.Score", "S.Score"), pt.size = 0, idents = c("NPC", "GPC1", "GPC2", "GPC3", "GPC4")) & theme_bw() & theme_manuscript & NoLegend() & theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+cellCycleVlnGG <- VlnPlot(invitro, c("G2M.Score", "S.Score"), pt.size = 0, idents = c("NPC", "GPC1", "GPC2", "GPC3", "GPC4")) & theme_bw() & theme_manuscriptOG & NoLegend() & theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 cellCycleVlnGG[[1]] <- cellCycleVlnGG[[1]] + ggtitle("G2M Phase Score")
 cellCycleVlnGG[[2]] <- cellCycleVlnGG[[2]] + ggtitle("S Phase Score")
@@ -557,7 +536,7 @@ color0 = "grey60"
 colPalette = c("dodgerblue2", 
         "gold", "red2")
 
-cellCycleFeatureGG <- FeaturePlot(invitro, c("G2M.Score", "S.Score"), order = T, pt.size = fig.pt.size) & scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) & theme_bw() & theme_manuscript & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch")) & xlab("UMAP 1") & ylab("UMAP 2")
+cellCycleFeatureGG <- FeaturePlot(invitro, c("G2M.Score", "S.Score"), order = T, pt.size = fig.pt.size) & scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) & theme_bw() & theme_manuscriptOG & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch")) & xlab("UMAP 1") & ylab("UMAP 2")
 ```
 
     ## Scale for colour is already present.
@@ -578,7 +557,7 @@ cellCycleFeatureGG
 ## Mature NPC Feature Plots
 
 ``` r
-npcFeaturePlots <- FeaturePlotCustom(invitro, c("SYT1", "MEIS2", "BCL11B"), plotLegend = "shared", pt.size = fig.pt.size)   & theme_bw() & theme_manuscript & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch"))
+npcFeaturePlots <- FeaturePlotCustom(invitro, c("SYT1", "MEIS2", "BCL11B"), plotLegend = "shared", pt.size = fig.pt.size)   & theme_bw() & theme_manuscriptOG & theme(legend.position = "bottom", legend.key.width = unit(.5, "inch"))
 
 npcFeaturePlots[[1]] <- npcFeaturePlots[[1]] + ylab("UMAP 2")
 npcFeaturePlots <- npcFeaturePlots & xlab("UMAP 1")
@@ -612,7 +591,131 @@ top / middle / bottom
 ![](14_Invitro_Analysis_files/figure-gfm/unnamed-chunk-22-1.png)<!-- -->
 
 ``` r
-ggsave("output/Figures/Invitro/invitroSuppFig.pdf", width = 30, height = 40)
+#ggsave("output/Figures/Invitro/invitroSuppFig.pdf", width = 30, height = 40)
+```
+
+## Specificity Analysis
+
+``` r
+invivo <- subset(invitroInvivo, subset = stage == "In Vivo")
+invivo <- subset(invivo, subset = cellType %in% c("GPC4", "imOL", "maOL", "Astrocyte"))
+
+GPC4expression <- DotPlot(invitroDE, features = GPC4.vs.Rest.sig[GPC4.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC4expressionWide <- pivot_wider(GPC4expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC4expressionWide$spec.GPC4 <- GPC4expressionWide$GPC4 / rowSums(GPC4expressionWide[,2:6])
+GPC4expressionWide <- GPC4expressionWide[order(GPC4expressionWide$spec.GPC4, decreasing = T),]
+GPC4expressionWide$group <- "GPC4"
+
+GPC3expression <- DotPlot(invitroDE, features = GPC3.vs.Rest.sig[GPC3.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC3expressionWide <- pivot_wider(GPC3expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC3expressionWide$spec.GPC3 <- GPC3expressionWide$GPC3 / rowSums(GPC3expressionWide[,2:6])
+GPC3expressionWide <- GPC3expressionWide[order(GPC3expressionWide$spec.GPC3, decreasing = T),]
+GPC3expressionWide$group <- "GPC3"
+
+GPC2expression <- DotPlot(invitroDE, features = GPC2.vs.Rest.sig[GPC2.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC2expressionWide <- pivot_wider(GPC2expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC2expressionWide$spec.GPC2 <- GPC2expressionWide$GPC2 / rowSums(GPC2expressionWide[,2:6])
+GPC2expressionWide <- GPC2expressionWide[order(GPC2expressionWide$spec.GPC2, decreasing = T),]
+GPC2expressionWide$group <- "GPC2"
+
+GPC1expression <- DotPlot(invitroDE, features = GPC1.vs.Rest.sig[GPC1.vs.Rest.sig$logFC > 0,]$gene)$data
+GPC1expressionWide <- pivot_wider(GPC1expression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+GPC1expressionWide$spec.GPC1 <- GPC1expressionWide$GPC1 / rowSums(GPC1expressionWide[,2:6])
+GPC1expressionWide <- GPC1expressionWide[order(GPC1expressionWide$spec.GPC1, decreasing = T),]
+GPC1expressionWide$group <- "GPC1"
+
+NPCexpression <- DotPlot(invitroDE, features = NPC.vs.Rest.sig[NPC.vs.Rest.sig$logFC > 0,]$gene)$data
+NPCexpressionWide <- pivot_wider(NPCexpression,  names_from = id, id_cols = features.plot, values_from = pct.exp)
+NPCexpressionWide$spec.NPC <- NPCexpressionWide$NPC / rowSums(NPCexpressionWide[,2:6])
+NPCexpressionWide <- NPCexpressionWide[order(NPCexpressionWide$spec.NPC, decreasing = T),]
+NPCexpressionWide$group <- "NPC"
+
+new_names <- c("Gene", "Specificity", "Population") 
+allSpecificity <- bind_rows(
+  GPC4expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  GPC3expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  GPC2expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  GPC1expressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+  
+  NPCexpressionWide %>% 
+    select(1,7:8) %>% 
+    setNames(new_names),
+)
+
+allSpecificity$Population <- factor(allSpecificity$Population, levels = rev(c("NPC", "GPC1", "GPC2", "GPC3", "GPC4")))
+
+write.csv(allSpecificity, "output/DE/invitroSpecificity.csv", quote = F, row.names = F)
+```
+
+## Ridge Plot
+
+``` r
+fig.ridgePlot <- ggplot(allSpecificity, aes(x = Specificity, y = Population, fill = Population)) + 
+  geom_density_ridges(alpha = 1) + 
+  scale_fill_manual(values = manuscriptPalette) + 
+  labs(
+    title = 'Density of Cell Population Specificity Scores',
+    x = 'Cell Population Specificity', tag = "H") +
+  theme_manuscript() + geom_point(shape = 21, fill = "white", colour = "black", stroke = .5, size = 2) + geom_vline(xintercept = .7) + theme(legend.position = "none", axis.title.y = element_blank()) 
+
+fig.ridgePlot
+```
+
+    ## Picking joint bandwidth of 0.028
+
+![](14_Invitro_Analysis_files/figure-gfm/unnamed-chunk-24-1.png)<!-- -->
+
+``` r
+invitroDE$label <- paste0("In Vitro ", invitroDE$cellType)
+invivo$label <- paste0("In Vivo ", invivo$cellType)
+
+dotplotSeurat <- merge(invitroDE, invivo)
+dotplotSeurat$label <- factor(dotplotSeurat$label, levels = rev(c("In Vitro NPC", "In Vitro GPC1", "In Vitro GPC2",
+                                                              "In Vitro GPC3", "In Vitro GPC4", "In Vivo GPC4",
+                                                              "In Vivo imOL", "In Vivo maOL", "In Vivo Astrocyte")))
+
+specificExpression <- DotPlot(dotplotSeurat, group.by = "label", features = allSpecificity[allSpecificity$Specificity > .7,]$Gene)$data
+
+
+fig.MarkerDotPlot <- ggplot(specificExpression[specificExpression$id %not in% c("In Vivo imOL", "In Vivo maOL"),], aes(size = pct.exp, fill = avg.exp.scaled, y = id, x = features.plot)) + 
+  geom_point(color = "black", pch = 21) + 
+  scale_size_area(max_size = 5) + 
+  scale_fill_gradientn(colors = PurpleAndYellow()) + 
+  theme_bw() + 
+  theme_manuscript() +
+  theme(axis.title = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), legend.position = "bottom") +
+  guides(fill = guide_colorbar(title.position = "bottom", title.theme = element_text(size = baseSize*axisTitleSize), barwidth = 5, barheight = .5), 
+         size = guide_legend(title.position = "bottom", title.theme = element_text(size = baseSize*axisTitleSize))) +
+  labs(tag = "I", title = "High Subpopulation Specificity Gene Expression", size = "% Expressed", fill = "Scaled Expression") 
+
+fig.MarkerDotPlot
+```
+
+![](14_Invitro_Analysis_files/figure-gfm/unnamed-chunk-25-1.png)<!-- -->
+
+``` r
+bottomS2 <- free(fig.ridgePlot) | fig.MarkerDotPlot
+
+bottomS2
+```
+
+    ## Picking joint bandwidth of 0.028
+
+![](14_Invitro_Analysis_files/figure-gfm/unnamed-chunk-25-2.png)<!-- -->
+
+``` r
+#ggsave(bottomS2, file = "output/Figures/Invitro/bottomS2.pdf", width = 11, height = 5, units = "in")
 ```
 
 ``` r
@@ -635,62 +738,62 @@ sessionInfo()
     ## [8] base     
     ## 
     ## other attached packages:
-    ##  [1] EnhancedVolcano_1.16.0      ggrepel_0.9.3              
-    ##  [3] viridis_0.6.2               viridisLite_0.4.1          
-    ##  [5] magrittr_2.0.3              tradeSeq_1.12.0            
-    ##  [7] slingshot_2.6.0             TrajectoryUtils_1.6.0      
-    ##  [9] princurve_2.1.6             data.table_1.14.8          
-    ## [11] ggVennDiagram_1.2.2         scales_1.3.0               
-    ## [13] patchwork_1.3.0.9000        xlsx_0.6.5                 
-    ## [15] plyr_1.8.8                  MAST_1.24.1                
-    ## [17] SingleCellExperiment_1.20.1 SummarizedExperiment_1.28.0
-    ## [19] Biobase_2.58.0              GenomicRanges_1.50.2       
-    ## [21] GenomeInfoDb_1.34.9         IRanges_2.32.0             
-    ## [23] S4Vectors_0.36.2            BiocGenerics_0.44.0        
-    ## [25] MatrixGenerics_1.10.0       matrixStats_0.63.0         
-    ## [27] dplyr_1.1.1                 tidyr_1.3.0                
-    ## [29] ggplot2_3.4.4               scPlottingTools_0.0.0.9000 
-    ## [31] SeuratObject_4.1.3          Seurat_4.3.0               
+    ##  [1] ggridges_0.5.7              EnhancedVolcano_1.16.0     
+    ##  [3] ggrepel_0.9.3               viridis_0.6.2              
+    ##  [5] viridisLite_0.4.1           magrittr_2.0.3             
+    ##  [7] tradeSeq_1.12.0             slingshot_2.6.0            
+    ##  [9] TrajectoryUtils_1.6.0       princurve_2.1.6            
+    ## [11] data.table_1.14.8           ggVennDiagram_1.2.2        
+    ## [13] scales_1.3.0                patchwork_1.3.0.9000       
+    ## [15] xlsx_0.6.5                  plyr_1.8.8                 
+    ## [17] MAST_1.24.1                 SingleCellExperiment_1.20.1
+    ## [19] SummarizedExperiment_1.28.0 Biobase_2.58.0             
+    ## [21] GenomicRanges_1.50.2        GenomeInfoDb_1.34.9        
+    ## [23] IRanges_2.32.0              S4Vectors_0.36.2           
+    ## [25] BiocGenerics_0.44.0         MatrixGenerics_1.10.0      
+    ## [27] matrixStats_0.63.0          dplyr_1.1.1                
+    ## [29] tidyr_1.3.0                 ggplot2_3.5.2              
+    ## [31] scPlottingTools_0.0.0.9000  SeuratObject_5.0.2         
+    ## [33] Seurat_4.3.0               
     ## 
     ## loaded via a namespace (and not attached):
-    ##   [1] systemfonts_1.0.4      igraph_2.0.3           lazyeval_0.2.2        
+    ##   [1] spam_2.10-0            igraph_2.0.3           lazyeval_0.2.2        
     ##   [4] sp_1.6-0               splines_4.2.3          BiocParallel_1.32.6   
     ##   [7] listenv_0.9.0          scattermore_0.8        digest_0.6.31         
     ##  [10] htmltools_0.5.5        fansi_1.0.4            tensor_1.5            
     ##  [13] cluster_2.1.4          ROCR_1.0-11            limma_3.54.2          
     ##  [16] globals_0.16.2         spatstat.sparse_3.0-3  RVenn_1.1.0           
-    ##  [19] colorspace_2.1-0       textshaping_0.3.6      xfun_0.38             
-    ##  [22] RCurl_1.98-1.12        jsonlite_1.8.4         progressr_0.13.0      
-    ##  [25] spatstat.data_3.0-4    survival_3.5-5         zoo_1.8-11            
-    ##  [28] glue_1.6.2             polyclip_1.10-4        gtable_0.3.3          
-    ##  [31] zlibbioc_1.44.0        XVector_0.38.0         leiden_0.4.3          
-    ##  [34] DelayedArray_0.24.0    future.apply_1.10.0    abind_1.4-5           
-    ##  [37] edgeR_3.40.2           DBI_1.1.3              spatstat.random_3.2-3 
-    ##  [40] miniUI_0.1.1.1         Rcpp_1.0.10            xtable_1.8-4          
-    ##  [43] reticulate_1.34.0      htmlwidgets_1.6.2      httr_1.4.5            
+    ##  [19] colorspace_2.1-0       xfun_0.38              RCurl_1.98-1.12       
+    ##  [22] jsonlite_1.8.4         progressr_0.13.0       spatstat.data_3.0-4   
+    ##  [25] survival_3.5-5         zoo_1.8-11             glue_1.6.2            
+    ##  [28] polyclip_1.10-4        gtable_0.3.3           zlibbioc_1.44.0       
+    ##  [31] XVector_0.38.0         leiden_0.4.3           DelayedArray_0.24.0   
+    ##  [34] future.apply_1.10.0    abind_1.4-5            edgeR_3.40.2          
+    ##  [37] DBI_1.1.3              spatstat.random_3.2-3  miniUI_0.1.1.1        
+    ##  [40] Rcpp_1.0.10            xtable_1.8-4           reticulate_1.43.0     
+    ##  [43] dotCall64_1.1-1        htmlwidgets_1.6.2      httr_1.4.5            
     ##  [46] RColorBrewer_1.1-3     ellipsis_0.3.2         ica_1.0-3             
     ##  [49] pkgconfig_2.0.3        rJava_1.0-6            farver_2.1.1          
     ##  [52] uwot_0.1.14            deldir_1.0-6           locfit_1.5-9.7        
     ##  [55] utf8_1.2.3             labeling_0.4.2         tidyselect_1.2.0      
     ##  [58] rlang_1.1.0            reshape2_1.4.4         later_1.3.0           
     ##  [61] munsell_0.5.0          tools_4.2.3            cli_3.6.1             
-    ##  [64] generics_0.1.3         ggridges_0.5.4         evaluate_0.20         
-    ##  [67] stringr_1.5.0          fastmap_1.1.1          ragg_1.2.5            
-    ##  [70] yaml_2.3.7             goftest_1.2-3          knitr_1.42            
-    ##  [73] fitdistrplus_1.1-8     purrr_1.0.1            RANN_2.6.1            
-    ##  [76] pbapply_1.7-0          future_1.32.0          nlme_3.1-162          
-    ##  [79] mime_0.12              ggrastr_1.0.2          compiler_4.2.3        
-    ##  [82] rstudioapi_0.14        beeswarm_0.4.0         plotly_4.10.1         
-    ##  [85] png_0.1-8              spatstat.utils_3.1-0   tibble_3.2.1          
-    ##  [88] stringi_1.7.12         highr_0.10             lattice_0.21-8        
-    ##  [91] Matrix_1.5-4           vctrs_0.6.1            pillar_1.9.0          
-    ##  [94] lifecycle_1.0.3        spatstat.geom_3.2-9    lmtest_0.9-40         
-    ##  [97] RcppAnnoy_0.0.20       cowplot_1.1.1          bitops_1.0-7          
-    ## [100] irlba_2.3.5.1          httpuv_1.6.9           R6_2.5.1              
-    ## [103] promises_1.2.0.1       KernSmooth_2.23-20     gridExtra_2.3         
-    ## [106] vipor_0.4.7            parallelly_1.35.0      codetools_0.2-19      
-    ## [109] MASS_7.3-58.3          xlsxjars_0.6.1         rprojroot_2.0.3       
-    ## [112] withr_2.5.0            sctransform_0.3.5      GenomeInfoDbData_1.2.9
-    ## [115] mgcv_1.8-42            parallel_4.2.3         grid_4.2.3            
-    ## [118] rmarkdown_2.21         Rtsne_0.16             spatstat.explore_3.2-7
-    ## [121] shiny_1.7.4            ggbeeswarm_0.7.2
+    ##  [64] generics_0.1.3         evaluate_0.20          stringr_1.5.0         
+    ##  [67] fastmap_1.1.1          yaml_2.3.7             goftest_1.2-3         
+    ##  [70] knitr_1.42             fitdistrplus_1.1-8     purrr_1.0.1           
+    ##  [73] RANN_2.6.1             pbapply_1.7-0          future_1.32.0         
+    ##  [76] nlme_3.1-162           mime_0.12              ggrastr_1.0.2         
+    ##  [79] compiler_4.2.3         rstudioapi_0.14        beeswarm_0.4.0        
+    ##  [82] plotly_4.10.1          png_0.1-8              spatstat.utils_3.1-0  
+    ##  [85] tibble_3.2.1           stringi_1.7.12         highr_0.10            
+    ##  [88] lattice_0.21-8         Matrix_1.6-4           vctrs_0.6.1           
+    ##  [91] pillar_1.9.0           lifecycle_1.0.3        spatstat.geom_3.2-9   
+    ##  [94] lmtest_0.9-40          RcppAnnoy_0.0.20       cowplot_1.1.1         
+    ##  [97] bitops_1.0-7           irlba_2.3.5.1          httpuv_1.6.9          
+    ## [100] R6_2.5.1               promises_1.2.0.1       KernSmooth_2.23-20    
+    ## [103] gridExtra_2.3          vipor_0.4.7            parallelly_1.35.0     
+    ## [106] codetools_0.2-19       MASS_7.3-58.3          xlsxjars_0.6.1        
+    ## [109] rprojroot_2.0.3        withr_2.5.0            sctransform_0.3.5     
+    ## [112] GenomeInfoDbData_1.2.9 mgcv_1.8-42            parallel_4.2.3        
+    ## [115] grid_4.2.3             rmarkdown_2.21         Rtsne_0.16            
+    ## [118] spatstat.explore_3.2-7 shiny_1.7.4            ggbeeswarm_0.7.2

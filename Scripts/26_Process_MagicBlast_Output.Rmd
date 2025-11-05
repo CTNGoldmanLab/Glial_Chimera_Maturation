@@ -1,0 +1,171 @@
+---
+title: "Process MagicBlast Output"
+author: "Hannah Aichelman"
+date: "2025-09-23"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+## Library packages
+
+```{r library packages, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(pheatmap)
+library(viridis)
+library(ggpubr)
+
+```
+
+# TXT FILES
+
+## Read in txt files and clean up data
+```{r read in data}
+# clean up column names to assign to data frames
+col_names = c("queryID",	"refID",	"percent_identity",	"not_used1",	"not_used2",	"not_used3",	"query_start",	"query_end",	"ref_start",
+             "ref_end",	"not_used4",	"not_used5",	"alignment_score",	"query_strand",	"ref_strand",	"query_length",	
+             "BTOP",	"num_placements",	"not_used6",	"compartment",	"left_overhang",	"right_overhang",	"mate_reference",	
+             "mate_ref_start",	"composite_score")
+
+# Read in magicblast output - Human probes against human genome
+human2human = read.table(file = "data_for_import/Xenium/probes/human2human.txt")
+head(human2human)
+colnames(human2human) = col_names
+
+human2human_filt = human2human %>%
+  select(-contains("not_used")) %>%
+  mutate(type = "human2human")
+
+# Read in magicblast output - Human probes against mouse genome
+human2mouse = read.table(file = "data_for_import/Xenium/probes/human2mouse.txt")
+head(human2mouse)
+colnames(human2mouse) = col_names
+
+human2mouse_filt = human2mouse %>%
+  select(-contains("not_used")) %>%
+  mutate(type = "human2mouse")
+
+
+```
+
+
+## Combine data, calculate metrics of interest
+```{r warning=FALSE}
+# calculate difference in composite score between different alignments within species
+# first for human probes
+
+human2human_tojoin = human2human_filt %>%
+  select(queryID, composite_score) %>%
+  rename(composite_score_human2human = composite_score)
+
+human2mouse_tojoin = human2mouse_filt %>%
+  select(queryID, composite_score) %>%
+  rename(composite_score_human2mouse = composite_score)
+
+human_joined = full_join(human2human_tojoin, human2mouse_tojoin, by = 'queryID') %>%
+  mutate(composite_score_diff = composite_score_human2human - composite_score_human2mouse)
+head(human_joined)
+
+p1 <- ggplot(human_joined, aes(x = composite_score_human2human, y = composite_score_human2mouse)) + geom_point()
+
+
+
+
+```
+
+
+## Calculate Probe Specificity Metrics
+```{r}
+# Calculate gene-level specificity metrics for human probes
+
+human_probe_specificity = human_joined %>%
+  group_by(queryID) %>%
+  summarise(
+    num_probes = n(),
+    mean_human2human_specificity = mean(composite_score_human2human, na.rm = TRUE),
+    sd_specificity = sd(composite_score_human2human, na.rm = TRUE),
+    min_specificity = min(composite_score_human2human, na.rm = TRUE),
+    max_specificity = max(composite_score_human2human, na.rm = TRUE),
+    # Calculate mean of off-target composite scores and the proportion of probes with strong specificity 
+    mean_human2mouse = mean(composite_score_human2mouse),
+    prop_perfect_human2human = mean(composite_score_human2human == 32, na.rm = TRUE),
+    prop_perfect_human2mouse = mean(composite_score_human2mouse == 32, na.rm = TRUE))
+
+
+
+```
+
+## Summary Visualizations
+```{r}
+# Create summary visualizations
+# Distribution of mean specificity scores
+
+ggplot(human_probe_specificity, aes(x = mean_human2human_specificity)) +
+  geom_histogram(bins = 50) +
+  theme_minimal() +
+  labs(title = "Distribution of Human Probe Specificity Scores",
+       x = "Mean Specificity Score (human - mouse)",
+       y = "Count")
+
+
+```
+
+## Identify probes with perfect specificity
+```{r}
+# Look at probes with perfect specificity
+perfect_specificity_human = human_probe_specificity %>%
+  filter(mean_human2human_specificity == 32)
+
+
+# Add plots for proportion of perfect scores
+ggplot(human_probe_specificity, aes(x = prop_perfect_human2human)) +
+  geom_histogram(bins = 50) +
+  theme_minimal() +
+  labs(title = "Distribution of Perfect Score Proportions (Human Probes vs Human Genome)",
+       x = "Proportion of Probes with Score = 32",
+       y = "Count")
+
+
+p1 <- ggplot(human_probe_specificity, aes(x = mean_human2human_specificity, y = mean_human2mouse)) + geom_point()
+
+p1 <- ggMarginal(p1, type = "density")
+p1
+
+
+```
+
+
+## Identify probes with better specificity in the wrong species
+```{r}
+human_non_specific_probes = human_joined %>%
+  group_by(queryID) %>%
+  subset(composite_score_diff < 0)
+
+
+```
+
+
+
+## Write out files with relevant metrics & print summary stats
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+
+# Save specificity results
+write.csv(human_probe_specificity, file = "data_for_import/Xenium/probes/human_probe_specificity_metrics.csv")
+
+
+```
+
+
+```{r}
+
+session_info()
+
+
+```

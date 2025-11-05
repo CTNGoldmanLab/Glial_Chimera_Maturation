@@ -1,0 +1,379 @@
+---
+title: "Figure creation for xenium data"
+author: "John Mariani"
+date: "09/08/2025"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+library(Seurat)
+library(ggplot2)
+library(scPlottingTools)
+library(patchwork)
+library(presto)
+library(viridis)
+library(tidyr)
+library(dplyr)
+
+```
+
+
+```{r}
+
+source("Scripts/HelperFunctions.R")
+source("Scripts/StyleSettings.R")
+baseSize = 6
+
+```
+
+
+## Import Xenium data to analyze like scRNA-seq
+```{r}
+
+counts <- t(read.csv("output/Xenium/files_for_R/raw_counts_combined_human.csv", row.names = 1))
+metadata <- read.csv("output/Xenium/files_for_R/adata_combined_human_comprehensive_cell_metadata.csv") 
+allCellMetadata <- read.csv("output/Xenium/files_for_R/adata_combined_pre_filtering_comprehensive_cell_metadata.csv") # This is for making the plots including the mouse and lq cells
+
+# Format for future plotting
+allCellMetadata <- allCellMetadata[,c(17,26:28)]
+allCellMetadata <- merge(allCellMetadata, metadata[,c(17,43,42)], by.x = 2, by.y = 2, all.x = T)
+allCellMetadata$size <- .9
+allCellMetadata[is.na(allCellMetadata$final_cell_type),]$size <- .8
+allCellMetadata$size <- as.numeric(allCellMetadata$size)
+allCellMetadata[is.na(allCellMetadata$final_cell_type),]$final_cell_type <- "Mouse"
+allCellMetadata$final_cell_type <- factor(allCellMetadata$final_cell_type , levels = rev(c("GPC", "imOL", "maOL", "Astrocyte", "imAstrocyte", "Mouse")))
+levels(allCellMetadata$final_cell_type)
+
+```
+
+
+
+```{r}
+
+xenium <- CreateSeuratObject(counts = counts, meta.data = metadata)
+
+xenium <- NormalizeData(xenium)
+xenium$final_cell_type <- factor(xenium$final_cell_type, levels = c("Astrocyte", "imAstrocyte", "GPC", "imOL", "maOL"))
+xenium$line <- ifelse(xenium$sample_id %in% c("C27_31900", "C27_33475"), "C27", "WA09")
+xenium <- SetIdent(xenium, value = "final_cell_type")
+
+embeddings <- metadata[,c("UMAP_1", "UMAP_2")]
+row.names(embeddings) <- metadata$current_cell_id
+identical(Cells(xenium), row.names(embeddings))
+
+xenium[['umap']] <- CreateDimReducObject(embeddings = as.matrix(embeddings), key = "UMAP_", assay = "RNA")
+
+fig.DimPlotLine <- DimPlotCustom(xenium, group.by = "final_cell_type", label = F,plotLegend = F, split.by = "line") & theme_manuscript() & scale_fill_manual(values = manuscriptPalette)  & theme(legend.position = "none")
+
+fig.DimPlotLine[[1]] <- fig.DimPlotLine[[1]] + labs(tag = "B", title = "WA09 (n = 4)") + theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), axis.text.x = element_blank())
+fig.DimPlotLine[[2]] <- fig.DimPlotLine[[2]] + labs(title = "C27 (n = 2)") + theme(axis.text.y = element_blank(), axis.title.y = element_blank())
+
+
+fig.DimPlotMerged <- DimPlotCustom(xenium, group.by = "final_cell_type", label = T,plotLegend = F) + labs(tag = "A", title = "Merged Xenium (n = 6)") & theme_manuscript() & scale_fill_manual(values = manuscriptPalette)  & theme(legend.position = "none") 
+
+fig.DimPlotMerged
+
+```
+
+## Stacked Plot Cell Type
+```{r}
+
+StackedCellType <- as.data.frame(table(xenium$final_cell_type))
+
+unique(StackedCellType$Var1)
+
+stackedPlotXenium <- ggplot(StackedCellType, aes(fill = Var1, y = Freq, x = "Var1"))+
+  geom_bar(position = "fill", stat = "identity")+
+  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscript() + scale_y_continuous(expand = c(0,0))  + labs(y = "Fraction Celltype", x = "Stage", fill = "Cell Type", tag = "C") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)
+
+stackedPlotXenium 
+
+(fig.DimPlotMerged | (fig.DimPlotLine[[1]] / fig.DimPlotLine[[2]]) | stackedPlotXenium) + plot_layout(widths = c(2,1,.25))
+
+```
+
+## Stacked Plot Cell Type by Sample
+```{r}
+
+StackedCellType <- as.data.frame(table(xenium$final_cell_type))
+
+unique(StackedCellType$Var1)
+
+stackedPlotXenium <- ggplot(StackedCellType, aes(fill = Var1, y = Freq, x = ""))+
+  geom_bar(position = "fill", stat = "identity")+
+  guides(fill = guide_legend(override.aes = list(size = .6))) + theme_bw() + theme_manuscript() + scale_y_continuous(expand = c(0,0))  + labs(y = "Fraction Celltype", x = "Stage", fill = "Cell Type", tag = "C") + theme(legend.key.size = unit(.6, "lines")) + xlab(element_blank()) + NoLegend() & scale_fill_manual(values = manuscriptPalette)
+
+stackedPlotXenium 
+
+(fig.DimPlotMerged | (fig.DimPlotLine[[1]] / fig.DimPlotLine[[2]]) | stackedPlotXenium) + plot_layout(widths = c(2,1,.25))
+
+```
+
+
+## Cell Type Marker Dot Plot
+```{r, warning = F}
+
+DefaultAssay(xenium) <- "RNA"
+allMarkers <- presto::wilcoxauc(xenium)
+astroMarkers <- presto::wilcoxauc(xenium, groups_use = c("Astrocyte", "imAstrocyte"))
+
+canonicalMarkers <- c("BST2", "CRB2", "ABCC9", "GFAP", "AQP4", "SOX9", "SLC1A2", "SLC1A3", "FGFR3", "EGFR", "PDGFRA", "CSPG4", "PCDH17", "CA10", "ALCAM", "OLIG1", "OLIG2", "THY1", "SOX10", "GPR17", "SIRT2", "FYN", "BCAS1", "MBP", "CNP", "PLP1", "MOBP", "NKX6-2", "MOG", "MAL", "ENPP2")
+
+#canonicalMarkers <- unique(allSpecificity[(allSpecificity$Specificity > .7 & allSpecificity$Group == "GPC4"),]$Gene)
+
+markerDotPlot <- DotPlot(xenium, features = canonicalMarkers)$data
+
+markerDotPlot$id <- factor(markerDotPlot$id, levels = rev(c("Astrocyte", "imAstrocyte", "GPC", "imOL", "maOL")))
+
+
+fig.MarkerDotPlot <- ggplot(markerDotPlot, aes(size = pct.exp, fill = avg.exp.scaled, y = id, x = features.plot)) + 
+  geom_point(color = "black", pch = 21) + 
+  scale_size_area(max_size = 4) + 
+  scale_fill_gradientn(colors = PurpleAndYellow()) + 
+  theme_bw() + 
+  theme_manuscript() +
+  theme(axis.title = element_blank(), 
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), 
+        legend.position = "bottom") +
+  guides(fill = guide_colorbar(barheight = unit(0.25, "cm"), title.position = "bottom", title.theme = element_text(size = axisTitleSize*baseSize), barwidth = 5), 
+         size = guide_legend(title.position = "bottom", title.theme = element_text(size = axisTitleSize*baseSize))) +
+    labs(tag = "D", title = "Canonical Marker Expression", size = "% Expressed", fill = "Scaled Expression") 
+
+
+fig.MarkerDotPlot
+
+```
+
+## Spatial Cell Type Plot 
+```{r}
+
+plot_data_wa09 <- allCellMetadata[allCellMetadata$sample_id.x == "WA09_40012",]
+plot_data_wa09 <- plot_data_wa09 %>%
+  dplyr::arrange(desc(final_cell_type == "Mouse")) 
+
+min(plot_data_wa09$spatial_x)
+min(plot_data_wa09$spatial_y)
+
+plot_data_wa09$spatial_x <- plot_data_wa09$spatial_x - min(plot_data_wa09$spatial_x)
+plot_data_wa09$spatial_y <- plot_data_wa09$spatial_y - min(plot_data_wa09$spatial_y)
+
+
+fig.wa09plot <- ggplot(plot_data_wa09, aes(x = spatial_y, y = spatial_x, fill = final_cell_type, size = size)) + geom_point(shape = 21, colour = "black", stroke = .15) + scale_fill_manual(values = manuscriptPalette) + theme_manuscript() + scale_size_continuous(range = c(.3, 1.2)) + NoLegend() + coord_fixed()  + labs(x = "Microns", y = "Microns", title = "Human Engraftment - Xenium", tag = "E")
+
+fig.wa09plot
+
+
+
+```
+
+
+
+## Receptor Bar Plot
+```{r}
+
+DefaultAssay(xenium) <- "RNA"
+
+receptors <- c("RAMP1", "RAMP2", "APP", "LRP5", "SCARB1", "VLDLR", "ERBB4", "IGF2R", "LRP1", "LRP6", "SIRPA", "DCC", 'DSCAM', "PTPRK", "IL6ST", "EDNRB", "ERBB3", "FGFR1", "TYRO3", "CD82", "CD9", "MSN", "IL1RAP", "BMPR1A", "BMPR2", "TGFBR1", "PDGFRA", "PTPRD", "PTPRS", "ITGAV", "ITGB1", "ITGB8", "TNFRSF1A", "TNFRSF21", "TNFRSF10B")
+
+
+
+markerDotPlot <- DotPlot(xenium, features = receptors, idents = "GPC")$data
+markerDotPlot <- markerDotPlot[order(markerDotPlot$avg.exp, decreasing = T),]
+markerDotPlot$features.plot <- factor(markerDotPlot$features.plot, levels = markerDotPlot$features.plot)
+
+
+fig.BarPlot <- ggplot(markerDotPlot[markerDotPlot$id == "GPC",], aes(fill = pct.exp, y = log1p(avg.exp), x = features.plot)) + 
+  geom_col() +
+  scale_fill_viridis() + 
+    scale_y_continuous(expand  = expansion(mult = c(0, 0.05))) +
+  theme_bw() + 
+  theme_manuscript() +
+   labs(tag = "F", title = "GPC Receptor Expression", fill = "% Expressed", y = "Normalized Xenium Expression") +
+  theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5),
+        legend.position = "bottom") + guides(fill = guide_colorbar(barheight = unit(0.25, "cm"), barwidth = 5))
+
+fig.BarPlot
+
+
+
+```
+
+
+## scRNA-seq reception expression and detection
+```{r, warning = F}
+
+invivo <- readRDS("output/RDS/invivo.rds")
+DefaultAssay(invivo) <- "RNA"
+invivo <- NormalizeData(invivo)
+
+
+markerDotPlotInvivo <- DotPlot(invivo, features = unique(markerDotPlot$features.plot), idents = "GPC")$data
+markerDotPlotInvivo <- markerDotPlotInvivo[order(markerDotPlotInvivo$avg.exp, decreasing = T),]
+markerDotPlotInvivo$features.plot <- factor(markerDotPlotInvivo$features.plot, levels = markerDotPlot$features.plot)
+
+markerDotPlot$group <- "All_Cells_Xenium"
+markerDotPlotInvivo$group <- "scRNA-Seq"
+
+markeRDotPlotCombined <- rbind(markerDotPlot, markerDotPlotInvivo)
+
+plot_df <- markeRDotPlotCombined %>%
+  pivot_wider(names_from = group, values_from = avg.exp, names_prefix = "avg.exp_")
+
+pivoted_df <- markeRDotPlotCombined %>%
+  pivot_wider(
+    names_from = group,
+    values_from = -c(features.plot, id, group)
+  )
+
+fig.ScatterPlotInvivo <- ggplot(pivoted_df, aes(x = pct.exp_All_Cells_Xenium, y = `pct.exp_scRNA-Seq`)) + geom_point(shape = 21, fill = "turquoise", colour = "black") + ggrepel::geom_text_repel(aes(label = features.plot), size = 2, max.overlaps = 25) + ggtitle("GPC Receptor Detection Comparison") + labs(tag = "G", x = "%Xenium Expressed", y = "%scRNA-Seq Expressed") + theme_manuscript() 
+
+fig.BarPlot | free(fig.ScatterPlotInvivo)
+
+
+```
+```{r}
+
+color0 = "grey60"
+colPalette = c("dodgerblue2", 
+        "gold", "red2")
+
+
+GPC <- subset(xenium, subset = final_cell_type == "GPC")
+metadataGPC <- GPC@meta.data
+
+receptorFetch <- FetchData(GPC, vars = c(receptors, "CCND1", "spatial_x", "spatial_y", "sample_id"))
+receptorFetch$cellID <- row.names(receptorFetch)
+
+receptorFetchLong <- pivot_longer(receptorFetch, cols = names(receptorFetch)[1:25])
+
+receptorFetchLongFilt <- receptorFetchLong[receptorFetchLong$sample_id == "WA09_40012",]
+
+
+gene <- "PDGFRA"
+fig.pdgfra <- ggplot(receptorFetchLongFilt[receptorFetchLongFilt$name == gene,], aes(x = spatial_y, y = spatial_x, colour = value)) + 
+  geom_point(size = 1) + 
+  scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) + 
+  theme_manuscript() + 
+  ggtitle(gene) +
+  labs(x = "Microns", y = "Microns", tag = "H") + 
+  theme(axis.text.x = element_blank(), axis.title.x = element_blank())
+
+fig.pdgfra
+
+gene <- "CD82"
+fig.cd82 <- ggplot(receptorFetchLongFilt[receptorFetchLongFilt$name == gene,], aes(x = spatial_y, y = spatial_x, colour = value)) + 
+  geom_point(size = 1) + 
+  scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) + 
+  theme_manuscript() + 
+  ggtitle(gene) +
+  labs(x = "Microns", y = "Microns") + 
+  theme(axis.text = element_blank(), axis.title = element_blank())
+
+fig.cd82
+
+gene <- "LRP1"
+fig.lrp1 <- ggplot(receptorFetchLongFilt[receptorFetchLongFilt$name == gene,], aes(x = spatial_y, y = spatial_x, colour = value)) + 
+  geom_point(size = 1) + 
+  scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) + 
+  theme_manuscript() + 
+  ggtitle(gene) +
+  labs(x = "Microns", y = "Microns")  
+
+fig.lrp1
+
+gene <- "LRP6"
+fig.lrp6 <- ggplot(receptorFetchLongFilt[receptorFetchLongFilt$name == gene,], aes(x = spatial_y, y = spatial_x, colour = value)) + 
+  geom_point(size = 1) + 
+  scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) + 
+  theme_manuscript() + 
+  ggtitle(gene) +
+  labs(x = "Microns", y = "Microns") + 
+  theme(axis.text.y = element_blank(), axis.title.y = element_blank())
+
+fig.lrp6
+
+gene <- "CCND1"
+fig.ccnd1 <- ggplot(receptorFetchLongFilt[receptorFetchLongFilt$name == gene,], aes(x = spatial_y, y = spatial_x, colour = value)) + 
+  geom_point(size = 1) + 
+  scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) + 
+  theme_manuscript() + 
+  ggtitle(gene) +
+  labs(x = "Microns", y = "Microns") + 
+  theme(axis.text = element_blank(), axis.title = element_blank())
+
+fig.ccnd1
+
+gene <- "ERBB3"
+fig.erbb3 <- ggplot(receptorFetchLongFilt[receptorFetchLongFilt$name == gene,], aes(x = spatial_y, y = spatial_x, colour = value)) + 
+  geom_point(size = 1) + 
+  scale_colour_gradientn(colors = c(color0, colorRampPalette(colPalette)(100))) + 
+  theme_manuscript() + 
+  ggtitle(gene) +
+  labs(x = "Microns", y = "Microns") + 
+  guides(colour = guide_colorbar(lims = c(0, 9))) + 
+  theme(axis.text.y = element_blank(), axis.title.y = element_blank())
+
+fig.erbb3
+
+(fig.pdgfra | fig.cd82 | fig.ccnd1) / 
+  (fig.lrp1 | fig.lrp6 | fig.erbb3) + plot_layout(guides = "collect") 
+
+bottom <- wrap_plots(fig.pdgfra, fig.cd82, fig.ccnd1, fig.lrp1, fig.lrp6, fig.erbb3)  * scale_colour_gradientn(limits = c(0, 6.8), colors = c(color0, colorRampPalette(colPalette)(100)), name = "Expression")  + plot_layout(guides = "collect")
+
+bottom
+
+
+
+
+
+```
+
+
+```{r, figure.width=8.5, height = 3}
+
+top <- ((fig.DimPlotMerged | (fig.DimPlotLine[[1]] / fig.DimPlotLine[[2]]) | stackedPlotXenium | free(fig.MarkerDotPlot)) + plot_layout(widths = c(2,1,.25,2)))
+top
+
+ggsave(top, filename = "output/Figures/Xenium/top.pdf", units = "in", width = 8.5, height = 3)
+```
+
+```{r, figure.width = 8.5, height = 4}
+
+
+middle <- (fig.wa09plot | free(fig.BarPlot) | free(fig.ScatterPlotInvivo, type = "label"))
+middle
+
+ggsave(middle, filename = "output/Figures/Xenium/middle.pdf", units = "in", width = 8.5, height = 4)
+
+
+```
+
+```{r, figure.width = 8.5, figure.height = 10.5}
+
+bottomWhole <- (plot_spacer() / bottom) + plot_layout(heights = c(8,2.5))
+bottomWhole
+
+ggsave(bottomWhole,  filename = "output/Figures/Xenium/bottom.pdf", width = 8.5, height = 10.5, units = "in")
+
+
+```
+
+
+
+
+```{r}
+
+
+
+sessionInfo()
+
+```

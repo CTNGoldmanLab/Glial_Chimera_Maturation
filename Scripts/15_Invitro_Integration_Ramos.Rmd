@@ -1,0 +1,318 @@
+---
+title: "Integration of in vitro hGPCs and Fetal snRNA-seq"
+author: "John Mariani"
+date: "08/22/2025"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+library(Seurat)
+library(scPlottingTools)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(MAST)
+library(plyr)
+library(xlsx)
+library(patchwork)
+library(ggplot2)
+library(scales)
+library(ggVennDiagram)
+library(data.table)
+library(slingshot)
+library(tradeSeq)
+library(tidyr)
+library(dplyr)
+library(plyr)
+library(magrittr)
+library(viridis)
+library(tidyr)
+library(EnhancedVolcano)
+library(ggalluvial)
+
+
+
+axisTitleSize <- 20
+axisTextSize <- 18
+labelFont = 18
+titleFont = 24
+tagSize = 34
+
+source("Scripts/HelperFunctions.R")
+
+
+theme_manuscript <-  theme(axis.text = element_text(size = axisTextSize), 
+        axis.title = element_text(size = axisTitleSize), 
+        title = element_text(size = titleFont), 
+        legend.title = element_text(size = axisTitleSize),
+        legend.text = element_text(size = axisTitleSize),
+        plot.tag = element_text(size = tagSize),
+        plot.title = element_text(size = titleFont))
+
+manuscriptPalette <- c("In Vivo" = "red2", 
+                       "In Vitro - GPC Stage" = "#2E30FF",
+                       "NPC" = "magenta",
+                       "GPC1" = "forestgreen",
+                       "GPC2" = "darkorange",
+                       "GPC3" = "firebrick2",
+                       "GPC4" = "turquoise",
+                       "Astrocyte" = "dodgerblue2",
+                       "imOL" = "gold",
+                       "maOL" = "darkorchid4",
+                       "GPC" = "turquoise",
+                       "imAstrocyte" = "firebrick2",
+                       "cGPC" = "darkorange",
+                       "cAPC" = "forestgreen")
+
+
+
+
+```
+
+## Import and filter Fetal snRNA-seq data
+```{r}
+
+sampleList <- list.files("data_for_import/External/Ramos/Matrices/")
+
+sampleData <- read.csv("data_for_import/External/Ramos/Metadata/GlialMetadata.csv")
+
+unique(sampleData$sample)
+
+sampleDF <- data.frame(sample = c("9C", "9G",
+                      "24C", "24G",
+                      "26C", "26G",
+                      "11C", "11G",
+                      "56C", "56G",
+                      "34C", "34G",
+                      "30C", "30G",
+                      "63C", "63G",
+                      "23C", "23G",
+                      "62C", "62G",
+                      "64C", "64G",
+                      "3C", "3G",
+                      "60C", "60G",
+                      "10C", "10G",
+                      "6C", "6G",
+                      "31C", "31G",
+                      "2C", "2G",
+                      "20C", "20G"), GEO = unique(sort(sampleList)))
+
+sampleDF[sampleDF$sample %not in% sampleData$sample,]
+
+sampleData[sampleData$sample %not in% sampleDF$sample,]
+
+rawH <- sapply(sampleList, function(x) {print(x) ; Read10X(paste0("data_for_import/External/Ramos/Matrices/",x, "/"))})
+
+sum(rawH[[1]][,2])
+
+mean(colSums(rawH[[1]]))
+
+for(i in 1:length(rawH)){
+  rawH[[i]] <- rawH[[i]][,colSums(rawH[[i]]) > 1000]
+}
+
+for(i in 1:length(rawH)){ 
+  colnames(rawH[[i]]) <- paste0(colnames(rawH[[i]]),"_",sampleList[i])
+}
+
+
+sampleData$cellID <- sub("_.*", "", sampleData$cellID)
+
+sampleData <- merge(sampleData, sampleDF, by.x = "sample", by.y = "sample")
+
+sampleData$cellID2 <- paste0(sampleData$cellID, "_", sampleData$GEO)
+
+seurat.objectsH <- sapply(c(1:length(rawH)), function(x) CreateSeuratObject(rawH[[x]], project = sampleList[x]))
+
+seurat.objectsH
+
+mergedH <- merge(seurat.objectsH[[1]], y = seurat.objectsH[2:length(seurat.objectsH)])
+
+mergedH$cellID2 <- Cells(mergedH)
+
+mergedHglia <- subset(mergedH, subset = cellID2 %in% sampleData$cellID2)
+
+mergedHgliaMeta <- mergedHglia@meta.data
+mergedHgliaMeta <- merge(mergedHgliaMeta, sampleData[,c("cellID2", "sample", "celltypes", "Type", "GEO", "percent.mt", "seurat_clusters")], by = "cellID2")
+
+
+mergedHgliaMeta <- mergedHgliaMeta[match(Cells(mergedHglia), mergedHgliaMeta$cellID2),]
+
+identical(mergedHgliaMeta$cellID2, Cells(mergedHglia))
+
+row.names(mergedHgliaMeta) <- mergedHgliaMeta$cellID2
+
+mergedHglia@meta.data <- mergedHgliaMeta
+
+Idents(mergedHglia) <- mergedHglia$celltypes
+
+```
+
+
+
+```{r}
+
+#Filter to fetal data
+external <- subset(mergedHglia, subset = Type %in% c("CorticalPlate", "GerminalMatrix"))
+external <- subset(external, subset = celltypes %not in% c("EPD", "CP"))
+
+### clean up memory
+rm(mergedHglia)
+rm(rawH)
+rm(seurat.objectsH)
+rm(mergedH)
+gc()
+
+# Load and in vitro data
+invitro <- readRDS("output/RDS/invitroInvivo.rds")
+invitro <- subset(invitro, subset = stage ==  "In Vitro - GPC Stage")
+invitro <- subset(invitro, subset = cellType %not in% c("Astrocyte", "maOL"))
+
+DefaultAssay(external) <- "RNA"
+external <- NormalizeData(external)
+
+DefaultAssay(invitro) <- "RNA"
+invitro <- NormalizeData(invitro)
+
+
+```
+
+```{r}
+
+table(external$celltypes)
+
+tempTypes <- sort(unique(external$celltypes))
+names(tempTypes) <- c("AC", "AC", "AC", "EN", "IPC", "IPC", "IPC", "IN", "IPC", "IPC", "OPC", 
+                      "RG", "preOL", "RG", "RG")
+
+
+tempTypes
+
+external$paperCellType <- external$celltypes
+external$celltypes <- mapvalues(x = external$celltypes, from = tempTypes, to = names(tempTypes))
+
+
+```
+
+
+## Subset to common genes and then scTransform datasets individually
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+table(external$orig.ident)
+table(invitro$orig.ident)
+
+genes_external <- rownames(external)
+genes_invitro <- rownames(invitro)
+
+common_genes <- intersect(genes_external, genes_invitro)
+
+externalFilt<- subset(external, features = common_genes)
+
+invitroFilt <- subset(invitro, features = common_genes)
+
+mergedBoth <- merge(externalFilt, invitroFilt)
+mergedBoth <- SplitObject(mergedBoth, split.by = "orig.ident")
+mergedBoth <- lapply(mergedBoth, SCTransform, verbose = T)
+
+
+```
+
+
+## Integrate data across captures
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+
+
+features <- SelectIntegrationFeatures(object.list = mergedBoth)
+
+mergedBoth <- PrepSCTIntegration(object.list = mergedBoth, anchor.features = features)
+
+mergedBoth <- lapply(X = mergedBoth, FUN = RunPCA, features = features)
+
+anchors <- FindIntegrationAnchors(object.list = mergedBoth, normalization.method = "SCT",
+    anchor.features = features, dims = 1:30, reduction = "rpca", k.anchor = 20)
+
+
+integrated <- IntegrateData(anchorset = anchors, dims = 1:30)
+
+integrated <- ScaleData(integrated, verbose = FALSE)
+integrated <- RunPCA(integrated, npcs = 30, verbose = FALSE)
+integrated <- RunUMAP(integrated, reduction = "pca", dims = 1:30)
+integrated <- FindNeighbors(integrated, reduction = "pca", dims = 1:30)
+integrated <- FindClusters(integrated, resolution = 0.5)
+
+integrated$stage <- ifelse(!is.na(integrated$stage), yes = "In Vitro - GPC Stage", no = "Fetal")
+
+
+```
+
+
+## Predict labels from external data set and transfer to our hGPC data
+```{r}
+invitroInt <- subset(integrated, subset = stage != "Fetal")
+externalInt <- subset(integrated, subset = stage == "Fetal")
+
+
+(DimPlotCustom(invitroInt, group.by = "cellType", label = T) + ggtitle("In vitro - GPC Stage")) | 
+  DimPlotCustom(externalInt, group.by = "celltypes", label = T) + ggtitle("Fetal - Ramos et al")
+
+
+
+
+anchors <- FindTransferAnchors(
+  reference = externalInt,
+  query = invitroInt,    
+  reference.assay = "integrated",   
+  query.assay = "integrated",
+  reduction = "rpca",                
+  dims = 1:30                        
+)
+
+predictions <- TransferData(
+  anchorset = anchors,
+  refdata = externalInt$celltypes,
+  query = invitroInt,
+  dims = 1:30,
+  weight.reduction = "rpca.ref"
+)
+
+table(predictions$predicted.id, predictions$cellType)
+
+
+integrated <- AddMetaData(
+  object = integrated,
+  metadata = predictions$predicted.id,
+  col.name = "predicted.id"
+)
+
+round((prop.table(table(integrated$predicted.id, integrated$cellType), margin = 2)*100),1)
+
+
+integrated <- AddMetaData(
+  object = integrated,
+  metadata = predictions$predicted.id.score, 
+  col.name = "predicted.score"
+)
+
+saveRDS(integrated, "output/RDS/integratedRamos.rds")
+
+
+
+```
+
+
+
+
+```{r}
+
+sessionInfo()
+
+
+```
+
