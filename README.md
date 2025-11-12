@@ -33,8 +33,7 @@ Ordered scRNA-seq, scATAC-seq, CUT&Tag, and Xenium analyses of ESC/iPSCs, their 
 [Initial Xenium Analysis](https://github.com/CTNGoldmanLab/Glial_Chimera_Maturation/blob/main/Scripts/28_Xenium_Inital_Analysis.ipynb "Link to Analysis Markdown")  
 [Xenium figure Construction](https://github.com/CTNGoldmanLab/Glial_Chimera_Maturation/blob/main/Scripts/29_Xenium_Figure_Construction.md "Link to Analysis Markdown")  
 
-![Graphical Abstract](https://github.com/CTNGoldmanLab/Glial_Chimera_Maturation/blob/main/data_for_import/glialMaturationSchematic.png)
-
+<img src="https://github.com/CTNGoldmanLab/Glial_Chimera_Maturation/blob/main/data_for_import/glialMaturationSchematic.png" width="600" alt="Graphical Abstract">
 
 
 
